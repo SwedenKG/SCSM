@@ -1,1 +1,12 @@
+Hej! Vi ska fortsätta bygga på mitt PowerShell-verktyg för Service Manager (SCSM), Cireson och Orchestrator. 
+
+Här är status och vad vi har gjort hittills:
+1. Vi har hittat rätt i SCSM-datastrukturen (från Runbook Activity RB via Parallel Activity PA till Service Request SR) både med SMLets och via direkta SQL-frågor.
+2. Jag har skapat ett gratis GitHub-konto (SwedenKG) och ett privat repository som heter "SCSM".
+3. I detta repository har jag laddat upp min gamla/befintliga PowerShell Windows Forms-kod (layout och funktioner).
+
+Målet för idag:
+Vi ska strukturera om min gamla kod. Vi ska baka in allt i en huvudfunktion som heter "Start-Applikation" och göra vänstermenyn helt dynamisk baserad på en variabel (PSCustomObject-array/hashtabell). Varje menyval ska automatiskt starta en funktion med samma namn.
+
+Jag kommer nu att dela min befintliga kod med dig (antingen via en temporär Public-länk till mitt GitHub-repo eller genom att klistra in layout-delen här i chatten). Hjälp mig att strukturera om den enligt plan!
 

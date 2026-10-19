@@ -143,9 +143,13 @@ function Invoke-Screen {
         [string]$TitleRight = ""
     )
 
-    # 1. Rensa det gamla innehållet i högerfönstret så att skärmar inte ritas ovanpå varandra
+    # 1. Rensa och frigör minnet från alla gamla kontroller så att inte ISE hänger sig
     if ($Global:panelChildForm) {
-        $Global:panelChildForm.Controls.Clear()
+        while ($Global:panelChildForm.Controls.Count -gt 0) {
+            $OldControl = $Global:panelChildForm.Controls[0]
+            $Global:panelChildForm.Controls.Remove($OldControl)
+            $OldControl.Dispose()
+        }
     }
 
     # 2. Uppdatera rubriktexterna högst upp i gränssnittet
@@ -167,41 +171,46 @@ function Invoke-Screen {
 # =========================================================================================
 
 function Build-DynamicMenu {
+    # 🛠️ 1. Lägg till parametern här så funktionen kan ta emot behållaren från Create-FormMain
+    param($ParentContainer) 
+
     # Skapa den fasta sidopanelen till vänster
     $panelSideMenu = New-Object System.Windows.Forms.Panel
     $panelSideMenu.Width = 220
     $panelSideMenu.Dock = [System.Windows.Forms.DockStyle]::Left
-    $panelSideMenu.BackColor = [System.Drawing.Color]::FromArgb(23, 23, 33)
-    $Global:formMain.Controls.Add($panelSideMenu)
+    $panelSideMenu.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
+    
+    # 🛠️ 2. Ändra till variabeln från parametern här!
+    $ParentContainer.Controls.Add($panelSideMenu)
 
     # Gruppera menykonfigurationen per huvudmeny för att rita dem i ordning
     $MainMenus = $Global:MenuConfig | Select-Object -ExpandProperty MainMenu -Unique
 
     # Vi ritar upp menyerna nerifrån och upp (eller sätter en fast startposition)
-    $CurrentTop = 10
+    $CurrentTop = 120
 
     foreach ($MainMenu in $MainMenus) {
         # --- 1. SKAPA HUVUDKNAPP ---
         $btnMainMenu = New-Object System.Windows.Forms.Button
         $btnMainMenu.Name = "btnMain_$MainMenu"
         $btnMainMenu.Text = "  $MainMenu"
-        $btnMainMenu.Size = New-Object System.Drawing.Size(220, 45)
+        $btnMainMenu.Size = New-Object System.Drawing.Size(220, 40)
         $btnMainMenu.Location = New-Object System.Drawing.Point(0, $CurrentTop)
         $btnMainMenu.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
         $btnMainMenu.FlatAppearance.BorderSize = 0
         $btnMainMenu.ForeColor = [System.Drawing.Color]::White
-        $btnMainMenu.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+        $btnMainMenu.Font = New-Object System.Drawing.Font("Verdana", 14, [System.Drawing.FontStyle]::Bold)
         $btnMainMenu.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-        $btnMainMenu.BackColor = [System.Drawing.Color]::FromArgb(23, 23, 33)
+        $btnMainMenu.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
 
         $panelSideMenu.Controls.Add($btnMainMenu)
-        $CurrentTop += 45
+        $CurrentTop += 40
 
         # --- 2. SKAPA UNDERMENYPANEL (Behållare för underknappar) ---
         $panelSubMenu = New-Object System.Windows.Forms.Panel
         $panelSubMenu.Name = "panelSubMenu_$MainMenu"
         $panelSubMenu.Width = 220
-        $panelSubMenu.BackColor = [System.Drawing.Color]::FromArgb(32, 32, 45)
+        $panelSubMenu.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
         $panelSubMenu.Visible = $false # Dold som standard
         
         # Spara panelen i vår globala lista för att lätt kunna stänga den sen
@@ -214,12 +223,12 @@ function Build-DynamicMenu {
         foreach ($Item in $SubItems) {
             $btnSubMenu = New-Object System.Windows.Forms.Button
             $btnSubMenu.Text = "    $($Item.SubMenu)"
-            $btnSubMenu.Size = New-Object System.Drawing.Size(220, 35)
+            $btnSubMenu.Size = New-Object System.Drawing.Size(220, 40)
             $btnSubMenu.Location = New-Object System.Drawing.Point(0, $SubTop)
             $btnSubMenu.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
             $btnSubMenu.FlatAppearance.BorderSize = 0
             $btnSubMenu.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 190)
-            $btnSubMenu.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+            $btnSubMenu.Font = New-Object System.Drawing.Font("Verdana", 14)
             $btnSubMenu.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 
             # Spara information på knappen så händelserna vet vad de ska göra
@@ -253,7 +262,7 @@ function Build-DynamicMenu {
             })
 
             $panelSubMenu.Controls.Add($btnSubMenu)
-            $SubTop += 35
+            $SubTop += 40
         }
 
         # Sätt höjden på panelen baserat på hur många knappar den har
@@ -278,7 +287,7 @@ function Build-DynamicMenu {
                 $this.ForeColor = [System.Drawing.Color]::FromArgb(0, 122, 204)
             }
             # Uppdatera layouten (flytta knappar under om det behövs)
-            Refresh-MenuLayout
+            #Refresh-MenuLayout
         })
     }
 }
@@ -391,14 +400,14 @@ function Create-FormMain {
 
     # Logo-panel (Högst upp till vänster, fast höjd 80)
     $panelLogo = New-Object System.Windows.Forms.Panel
-    $panelLogo.Size = New-Object System.Drawing.Size(220, 80)
+    $panelLogo.Size = New-Object System.Drawing.Size(220, 110)
     $panelLogo.Location = New-Object System.Drawing.Point(0, 0)
     $panelLogo.BackColor = [System.Drawing.Color]::FromArgb(23, 23, 33)
     
     # Din logotyp-ruta (Här dubbelklickar du för att byta miljö!)
     $pictureBoxLogo = New-Object System.Windows.Forms.PictureBox
     $pictureBoxLogo.Size = New-Object System.Drawing.Size(180, 50)
-    $pictureBoxLogo.Location = New-Object System.Drawing.Point(20, 15)
+    $pictureBoxLogo.Location = New-Object System.Drawing.Point(20, 30)
     $pictureBoxLogo.BackColor = [System.Drawing.Color]::FromArgb(0, 122, 204) # Loggan
     $pictureBoxLogo.Add_DoubleClick({ Show-FormSettings })
     $panelLogo.Controls.Add($pictureBoxLogo)
@@ -440,110 +449,119 @@ function Create-FormMain {
     $Global:panelChildForm.BackColor = [System.Drawing.Color]::FromArgb(31, 31, 43)
     $Global:formMain.Controls.Add($Global:panelChildForm)
 
-    # 🛠️ HÄR STARTAR VI MENYN: Vi skickar med behållaren till Build-DynamicMenu
-    Build-DynamicMenu -ParentPanel $panelLeftContainer
+    # 🛠️ HÄR STARTAR VI MENYN:
+    Build-DynamicMenu -ParentContainer $panelLeftContainer
 
     # Visa fönstret
     [System.Windows.Forms.Application]::Run($Global:formMain)
 }
 
-
-
-
 # =========================================================================================
 # ZON 5: SKÄRMFUNKTIONER (Platshållare för dina vyer)
 # =========================================================================================
 
-function Create-FormArenden {
-    Write-Host "[*] Anpassar Ärenden-vyn till din exakta original-look..." -ForegroundColor Cyan
+function Create-formÄrenden {
+    Write-Host "[*] Startar Ärenden-vyn baserat på ditt original-skript..." -ForegroundColor Cyan
 
-    # Rensa panelen helt först så inga gamla bildelement (som den blå fyrkanten) ligger kvar
+    # Rensa den stora högerpanelen helt först
     $Global:panelChildForm.Controls.Clear()
 
     # =========================================================================================
-    # 1. TOPPANEL FÖR FILTER (Mörkt färgblock klistrat högst upp)
+    # 1. SKAPA ARBETSYTAN (Ett speglat fönster inuti panelen)
     # =========================================================================================
-    $panelFilter = New-Object System.Windows.Forms.Panel
-    $panelFilter.Height = 80
-    $panelFilter.Dock = [System.Windows.Forms.DockStyle]::Top
-    $panelFilter.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 45) # Din exakta mörka filterfärg
-
-    # --- FILTER 1: HANDLÄGGARE ---
-    $lblHandlaggare = New-Object System.Windows.Forms.Label
-    $lblHandlaggare.Text = "Handläggare"
-    $lblHandlaggare.Location = New-Object System.Drawing.Point(20, 12)
-    $lblHandlaggare.Size = New-Object System.Drawing.Size(150, 20)
-    $lblHandlaggare.ForeColor = [System.Drawing.Color]::FromArgb(160, 160, 160)
-    $lblHandlaggare.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-
-    $comboBoxHandlaggare = New-Object System.Windows.Forms.ComboBox
-    $comboBoxHandlaggare.Location = New-Object System.Drawing.Point(20, 37)
-    $comboBoxHandlaggare.Size = New-Object System.Drawing.Size(250, 25)
-    $comboBoxHandlaggare.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-    $comboBoxHandlaggare.Items.AddRange(@('Gedin Kerry - HK', 'Alla Handläggare'))
-    $comboBoxHandlaggare.SelectedIndex = 0
-
-    # --- FILTER 2: SUPPORTGROUP ---
-    $lblSupport = New-Object System.Windows.Forms.Label
-    $lblSupport.Text = "Supportgroup"
-    $lblSupport.Location = New-Object System.Drawing.Point(645, 12)
-    $lblSupport.Size = New-Object System.Drawing.Size(150, 20)
-    $lblSupport.ForeColor = [System.Drawing.Color]::FromArgb(160, 160, 160)
-    $lblSupport.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-    $lblSupport.Anchor = [System.Windows.Forms.AnchorStyles]::Right
-
-    $comboBoxSupport = New-Object System.Windows.Forms.ComboBox
-    $comboBoxSupport.Location = New-Object System.Drawing.Point(645, 37)
-    $comboBoxSupport.Size = New-Object System.Drawing.Size(255, 25)
-    $comboBoxSupport.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-    $comboBoxSupport.Items.AddRange(@('IT Förvaltning Krimson', 'Alla Supportgrupper'))
-    $comboBoxSupport.SelectedIndex = 0
-    $comboBoxSupport.Anchor = [System.Windows.Forms.AnchorStyles]::Right
-
-    $panelFilter.Controls.AddRange(@($lblHandlaggare, $comboBoxHandlaggare, $lblSupport, $comboBoxSupport))
+    $formTickets = New-Object System.Windows.Forms.Form
+    $formTickets.TopLevel = $False
+    $formTickets.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+    $formTickets.BackColor = [System.Drawing.Color]::FromArgb(31, 31, 43) # Matchar huvudfönstrets mörka färg
+    $formTickets.Dock = [System.Windows.Forms.DockStyle]::Fill
 
     # =========================================================================================
-    # 2. DATA GRID VIEW (Den stora grå tabellen som fyller resten av ytan)
+    # 2. FILTERBOXAR OCH TEXT (PLATS OCH LABELS)
     # =========================================================================================
-    $Global:dataGridViewArenden = New-Object System.Windows.Forms.DataGridView
-    $Global:dataGridViewArenden.Dock = [System.Windows.Forms.DockStyle]::Fill # Fyller ut ALLY yta under filtren
-    $Global:dataGridViewArenden.BackgroundColor = [System.Drawing.Color]::FromArgb(160, 160, 160) # Din ljusgrå tabellfärg
-    $Global:dataGridViewArenden.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-    $Global:dataGridViewArenden.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
-    $Global:dataGridViewArenden.AllowUserToAddRows = $false
-    $Global:dataGridViewArenden.ReadOnly = $true
     
-    # Grid-linjer och cell-styling för att matcha stilen
-    $Global:dataGridViewArenden.EnableHeadersVisualStyles = $false
-    $Global:dataGridViewArenden.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(240, 240, 240)
-    $Global:dataGridViewArenden.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(160, 160, 160)
-    $Global:dataGridViewArenden.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Black
+    # --- HANDLÄGGARE ---
+    $labelÄrendenAnalyst = New-Object System.Windows.Forms.Label
+    $labelÄrendenAnalyst.Text = "Handläggare"
+    $labelÄrendenAnalyst.ForeColor = [System.Drawing.Color]::FromArgb(160, 160, 160)
+    $labelÄrendenAnalyst.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+    $labelÄrendenAnalyst.Location = New-Object System.Drawing.Point(20, 15)
+    $labelÄrendenAnalyst.AutoSize = $True
 
-    # Skapa och koppla tabell-data
+    $comboBoxÄrendenAnalyst = New-Object System.Windows.Forms.ComboBox
+    $comboBoxÄrendenAnalyst.Location = New-Object System.Drawing.Point(20, 40)
+    $comboBoxÄrendenAnalyst.Size = New-Object System.Drawing.Size(250, 25)
+    $comboBoxÄrendenAnalyst.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    $comboBoxÄrendenAnalyst.Items.AddRange(@('Gedin Kerry - HK', 'Alla Handläggare'))
+    $comboBoxÄrendenAnalyst.SelectedIndex = 0
+
+    # --- SUPPORTGROUP ---
+    $labelÄrendenSupportGroup = New-Object System.Windows.Forms.Label
+    $labelÄrendenSupportGroup.Text = "Supportgroup"
+    $labelÄrendenSupportGroup.ForeColor = [System.Drawing.Color]::FromArgb(160, 160, 160)
+    $labelÄrendenSupportGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+    $labelÄrendenSupportGroup.Location = New-Object System.Drawing.Point(650, 15)
+    $labelÄrendenSupportGroup.Anchor = [System.Windows.Forms.AnchorStyles]::Right
+    $labelÄrendenSupportGroup.AutoSize = $True
+
+    $comboBoxÄrendenSupportGroup = New-Object System.Windows.Forms.ComboBox
+    $comboBoxÄrendenSupportGroup.Location = New-Object System.Drawing.Point(650, 40)
+    $comboBoxÄrendenSupportGroup.Size = New-Object System.Drawing.Size(250, 25)
+    $comboBoxÄrendenSupportGroup.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    $comboBoxÄrendenSupportGroup.Items.AddRange(@('IT Förvaltning Krimson', 'Alla Supportgrupper'))
+    $comboBoxÄrendenSupportGroup.SelectedIndex = 0
+    $comboBoxÄrendenSupportGroup.Anchor = [System.Windows.Forms.AnchorStyles]::Right
+
+    # =========================================================================================
+    # 3. DATA GRID VIEW (Den stora ärendetabellen)
+    # =========================================================================================
+    $Global:dataGridViewÄrenden = New-Object System.Windows.Forms.DataGridView
+    $Global:dataGridViewÄrenden.Location = New-Object System.Drawing.Point(20, 90)
+    $Global:dataGridViewÄrenden.Size = New-Object System.Drawing.Size(880, 500)
+    $Global:dataGridViewÄrenden.Anchor = [System.Windows.Forms.AnchorStyles]@"
+Top, Bottom, Left, Right
+"@
+    # Snygg design på tabellen
+    $Global:dataGridViewÄrenden.BackgroundColor = [System.Drawing.Color]::FromArgb(160, 160, 160) # Din ljusgrå färg enligt skiss
+    $Global:dataGridViewÄrenden.ForeColor = [System.Drawing.Color]::Black
+    $Global:dataGridViewÄrenden.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+    $Global:dataGridViewÄrenden.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+    $Global:dataGridViewÄrenden.AllowUserToAddRows = $False
+    $Global:dataGridViewÄrenden.ReadOnly = $True
+    $Global:dataGridViewÄrenden.EnableHeadersVisualStyles = $False
+    $Global:dataGridViewÄrenden.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(240, 240, 240)
+
+    # Bygg kolumner direkt så tabellen inte startar tom
     $dataTable = New-Object System.Data.DataTable
-    [void]$dataTable.Columns.Add("ID")
-    [void]$dataTable.Columns.Add("Titel")
-    [void]$dataTable.Columns.Add("Status")
-    [void]$dataTable.Columns.Add("Skapad")
+    [void]$dataTable.Columns.Add("Ärende Nr.")
+    [void]$dataTable.Columns.Add("Beskrivning")
+    [void]$dataTable.Columns.Add("Startdatum")
     
     $Row = $dataTable.NewRow()
-    $Row["ID"]     = "IR12345"
-    $Row["Titel"]  = "Här laddas dina SCSM-ärenden automatiskt..."
-    $Row["Status"] = "Aktiv"
-    $Row["Skapad"] = (Get-Date).ToString("yyyy-MM-dd HH:mm")
+    $Row["Ärende Nr."] = "IR12345"
+    $Row["Beskrivning"] = "Här laddas dina live-ärenden automatiskt inom kort..."
+    $Row["Startdatum"]  = (Get-Date).ToString("yyyy-MM-dd HH:mm")
     $dataTable.Rows.Add($Row)
-    $Global:dataGridViewArenden.DataSource = $dataTable
+    $Global:dataGridViewÄrenden.DataSource = $dataTable
 
     # =========================================================================================
-    # 3. KOPPLING TILL PROJEKTET
+    # 4. MONTERA OCH VISA ELEMENTEN
     # =========================================================================================
-    # VIKTIGT: Lägg till tabellen FÖRST och filtret SIST när vi använder Dock, annars hamnar de bakom varandra!
-    $Global:panelChildForm.Controls.Add($Global:dataGridViewArenden)
-    $Global:panelChildForm.Controls.Add($panelFilter)
+    # Lägg till kontrollerna i fönstret $formTickets
+    $formTickets.Controls.AddRange(@(
+        $labelÄrendenAnalyst, $comboBoxÄrendenAnalyst,
+        $labelÄrendenSupportGroup, $comboBoxÄrendenSupportGroup,
+        $Global:dataGridViewÄrenden
+    ))
+
+    # Montera $formTickets inuti huvudpanelen
+    $Global:panelChildForm.Controls.Add($formTickets)
+    $formTickets.Show()
     
+    # Tvinga fönstret att rita upp sig direkt
     $Global:panelChildForm.BringToFront()
     $Global:panelChildForm.Refresh()
 }
+
 
 
 

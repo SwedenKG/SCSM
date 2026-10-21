@@ -207,7 +207,7 @@ function Build-DynamicMenu {
         # --- 1. SKAPA HUVUDKNAPP ---
         $btnMainMenu = New-Object System.Windows.Forms.Button
         $btnMainMenu.Name = "btnMain_$MainMenu"
-        $btnMainMenu.Text = "  $MainMenu"
+        $btnMainMenu.Text = $MainMenu
         $btnMainMenu.Size = New-Object System.Windows.Forms.Size($panelSideMenu.Width, 40)
         $btnMainMenu.Location = New-Object System.Drawing.Point(0, $CurrentTop)
         $btnMainMenu.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -215,6 +215,7 @@ function Build-DynamicMenu {
         $btnMainMenu.ForeColor = [System.Drawing.Color]::White
         $btnMainMenu.Font = New-Object System.Drawing.Font("Verdana", 14)
         $btnMainMenu.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+        $btnMainMenu.Padding = New-Object System.Windows.Forms.Padding(15, 0, 0, 0)
         $btnMainMenu.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
 
         # Spara texten som ska visas i statusraden på knappen via .Tag
@@ -253,14 +254,15 @@ function Build-DynamicMenu {
 
         foreach ($Item in $SubItems) {
             $btnSubMenu = New-Object System.Windows.Forms.Button
-            $btnSubMenu.Text = "    $($Item.SubMenu)"
-            $btnSubMenu.Size = New-Object System.Windows.Forms.Size($panelLeftContainer.Width, 40)
+            $btnSubMenu.Text = $Item.SubMenu
+            $btnSubMenu.Size = New-Object System.Windows.Forms.Size($panelSideMenu.Width, 40)
             $btnSubMenu.Location = New-Object System.Drawing.Point(0, $SubTop)
             $btnSubMenu.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
             $btnSubMenu.FlatAppearance.BorderSize = 0
             $btnSubMenu.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 190)
             $btnSubMenu.Font = New-Object System.Drawing.Font("Verdana", 14)
             $btnSubMenu.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+            $btnSubMenu.Padding = New-Object System.Windows.Forms.Padding(30, 0, 0, 0)
 
             # Spara information på knappen så händelserna vet vad de ska göra
             $btnSubMenu.Tag = $Item
@@ -451,9 +453,8 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     # =========================================================================================
     # 1. SIDOMENY BEHÅLLARE (VÄNSTER)
     # =========================================================================================
+    # --- # 1. SIDOMENY BEHÅLLARE (Vänster) ---
     $panelLeftContainer = New-Object System.Windows.Forms.Panel
-    $panelLeftContainer.Width = 180
-    $panelLeftContainer.Dock = [System.Windows.Forms.DockStyle]::Left
     $panelLeftContainer.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
 
     # Klistra in din långa Base64-textsträng från gamla Tools.ps1 mellan citattecknen:
@@ -515,11 +516,17 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     # 2. Lägg till statusraden (Den lägger sig nu i botten till höger om menyn)
     $Global:formMain.Controls.Add($statusStrip)
 
-    # 3. Lägg till sidomenyns behållare SIST (Då tillåts den ta hela höjden från topp till botten)
+    # 3. Kör den dynamiska menyn FÖRST så att bredden räknas ut i bakgrunden
+    Build-DynamicMenu -ParentContainer $panelLeftContainer
+
+    # 4. Lägg till sidomenyns behållare i fönstret NU när storleken är satt
     $Global:formMain.Controls.Add($panelLeftContainer)
 
-    # HÄR STARTAR VI MENYN INUTI BEHÅLLAREN:
-    Build-DynamicMenu -ParentContainer $panelLeftContainer
+    # 5. NU dockar vi den till vänster så att den låser sig snyggt
+    $panelLeftContainer.Dock = [System.Windows.Forms.DockStyle]::Left
+    
+    # Tvinga fönstret att uppdatera grafiken
+    $Global:formMain.Refresh()
 
     # Visa fönstret
     [System.Windows.Forms.Application]::Run($Global:formMain)

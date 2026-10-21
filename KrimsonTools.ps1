@@ -165,51 +165,60 @@ function Invoke-Screen {
     }
 }
 
-
 # =========================================================================================
-# ZON 3: DEN DYNAMISKA MENYBYGGAREN (Sätter ihop sidomenyn)
+# ZON 3: DEN DYNAMISKA MENYBYGGAREN (Sätter ihop sidomenyn med rätt färger & statusbar)
 # =========================================================================================
-
 function Build-DynamicMenu {
     # 🛠️ 1. Lägg till parametern här så funktionen kan ta emot behållaren från Create-FormMain
     param($ParentContainer) 
-
-    # Skapa den fasta sidopanelen till vänster
-    $panelSideMenu = New-Object System.Windows.Forms.Panel
-    $panelSideMenu.Width = 220
-    $panelSideMenu.Dock = [System.Windows.Forms.DockStyle]::Left
-    $panelSideMenu.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
     
     # 🛠️ 2. Ändra till variabeln från parametern här!
-    $ParentContainer.Controls.Add($panelSideMenu)
+    $panelSideMenu = $ParentContainer
 
     # Gruppera menykonfigurationen per huvudmeny för att rita dem i ordning
     $MainMenus = $Global:MenuConfig | Select-Object -ExpandProperty MainMenu -Unique
 
     # Vi ritar upp menyerna nerifrån och upp (eller sätter en fast startposition)
-    $CurrentTop = 120
+    $CurrentTop = 135
 
     foreach ($MainMenu in $MainMenus) {
         # --- 1. SKAPA HUVUDKNAPP ---
         $btnMainMenu = New-Object System.Windows.Forms.Button
         $btnMainMenu.Name = "btnMain_$MainMenu"
         $btnMainMenu.Text = "  $MainMenu"
-        $btnMainMenu.Size = New-Object System.Drawing.Size(220, 40)
+        $btnMainMenu.Size = New-Object System.Windows.Forms.Size($panelLeftContainer.Width, 40)
         $btnMainMenu.Location = New-Object System.Drawing.Point(0, $CurrentTop)
         $btnMainMenu.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
         $btnMainMenu.FlatAppearance.BorderSize = 0
         $btnMainMenu.ForeColor = [System.Drawing.Color]::White
-        $btnMainMenu.Font = New-Object System.Drawing.Font("Verdana", 14, [System.Drawing.FontStyle]::Bold)
+        $btnMainMenu.Font = New-Object System.Drawing.Font("Verdana", 14)
         $btnMainMenu.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
         $btnMainMenu.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
 
+        # Spara texten som ska visas i statusraden på knappen via .Tag
+        if ($MainMenu -eq 'Daily') { $btnMainMenu.Tag = "Daily - Dagliga rutiner" }
+        elseif ($MainMenu -eq 'Release') { $btnMainMenu.Tag = "Release - Driftsättning" }
+        elseif ($MainMenu -eq 'Statistik') { $btnMainMenu.Tag = "Statistik - Analysera och presentera data" }
+        elseif ($MainMenu -eq 'Tools') { $btnMainMenu.Tag = "Tools - Diverse verktyg" }
+
+        # Hover-effekter för Huvudknappen kopplat till den Orangea Statusraden
+        $btnMainMenu.Add_MouseEnter({
+            if ($Global:toolStripStatusLabelLeft) {
+                $Global:toolStripStatusLabelLeft.Text = $this.Tag
+            }
+        })
+        $btnMainMenu.Add_MouseLeave({
+            if ($Global:toolStripStatusLabelLeft) {
+                $Global:toolStripStatusLabelLeft.Text = ""
+            }
+        })
+
         $panelSideMenu.Controls.Add($btnMainMenu)
-        $CurrentTop += 40
 
         # --- 2. SKAPA UNDERMENYPANEL (Behållare för underknappar) ---
         $panelSubMenu = New-Object System.Windows.Forms.Panel
         $panelSubMenu.Name = "panelSubMenu_$MainMenu"
-        $panelSubMenu.Width = 220
+        $panelSubMenu.Width = $panelLeftContainer.Width
         $panelSubMenu.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
         $panelSubMenu.Visible = $false # Dold som standard
         
@@ -223,7 +232,7 @@ function Build-DynamicMenu {
         foreach ($Item in $SubItems) {
             $btnSubMenu = New-Object System.Windows.Forms.Button
             $btnSubMenu.Text = "    $($Item.SubMenu)"
-            $btnSubMenu.Size = New-Object System.Drawing.Size(220, 40)
+            $btnSubMenu.Size = New-Object System.Windows.Forms.Size($panelLeftContainer.Width, 40)
             $btnSubMenu.Location = New-Object System.Drawing.Point(0, $SubTop)
             $btnSubMenu.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
             $btnSubMenu.FlatAppearance.BorderSize = 0
@@ -234,31 +243,25 @@ function Build-DynamicMenu {
             # Spara information på knappen så händelserna vet vad de ska göra
             $btnSubMenu.Tag = $Item
 
-            # Hover-effekt (Highlight när man drar musen över)
+            # Hover-effekt för underknappar (Ändrar bakgrundsfärg och skriver till statusraden)
             $btnSubMenu.Add_MouseEnter({
-                if ($this.ForeColor -ne [System.Drawing.Color]::FromArgb(0, 122, 204)) {
-                    $this.BackColor = [System.Drawing.Color]::FromArgb(43, 43, 60)
+                $this.BackColor = [System.Drawing.Color]::FromArgb(43, 43, 60)
+                if ($Global:toolStripStatusLabelLeft) {
+                    $Global:toolStripStatusLabelLeft.Text = $this.Tag.StatusText
                 }
             })
             $btnSubMenu.Add_MouseLeave({
-                if ($this.ForeColor -ne [System.Drawing.Color]::FromArgb(0, 122, 204)) {
-                    $this.BackColor = [System.Drawing.Color]::FromArgb(32, 32, 45)
+                $this.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
+                if ($Global:toolStripStatusLabelLeft) {
+                    $Global:toolStripStatusLabelLeft.Text = ""
                 }
             })
 
             # Klick-händelse för undermenyn
             $btnSubMenu.Add_Click({
-                # Återställ alla andra underknappars färg i denna panel
-                $this.Parent.Controls | ForEach-Object { 
-                    $_.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 190) 
-                    $_.BackColor = [System.Drawing.Color]::FromArgb(32, 32, 45)
-                }
-                # Highlighta den klickade knappen (Krimson Blå text)
-                $this.ForeColor = [System.Drawing.Color]::FromArgb(0, 122, 204)
-                
                 # Starta den dynamiska skärmen!
                 $Data = $this.Tag
-                Invoke-Screen -TargetFunction $Data.TargetFunction -TitleLeft $Data.SubMenu -TitleRight $Data.StatusText
+                Invoke-Screen -TargetFunction $Data.TargetFunction -TitleLeft $Data.MainMenu -TitleRight $Data.SubMenu
             })
 
             $panelSubMenu.Controls.Add($btnSubMenu)
@@ -266,55 +269,72 @@ function Build-DynamicMenu {
         }
 
         # Sätt höjden på panelen baserat på hur många knappar den har
-        $panelSubMenu.Height = $SubTop
-        $panelSideMenu.Controls.Add($panelSubMenu)
+        $panelSubMenu.Tag = $SubTop # Sparar den beräknade höjden för klick-händelsen!
+        $panelSubMenu.Height = 0   # Tvingar panelen att starta helt stängd (platt)
+        
+        # 1. Placera undermenyn precis där vi står just nu
         $panelSubMenu.Location = New-Object System.Drawing.Point(0, $CurrentTop)
-        $CurrentTop += $panelSubMenu.Height
 
-        # Klick-händelse för huvudmenyn (Öppna/stäng undermenyn)
+        # 2. Öka startpositionen för NÄSTA huvudmeny med huvudknappens höjd (35 pixlar)
+        $CurrentTop += 40
+
+        # 3. Lägg till undermenyn i sidopanelen
+        $panelSideMenu.Controls.Add($panelSubMenu)
+
+        # Klick-händelse för huvudmenyn (Öppna/stäng undermenyn och gör texten Orange!)
         $btnMainMenu.Add_Click({
             $TargetPanelName = "panelSubMenu_$($this.Text.Trim())"
             $TargetPanel = $Global:SubMenuPanels[$TargetPanelName]
 
             if ($TargetPanel.Visible) {
                 $TargetPanel.Visible = $false
+                $TargetPanel.Height = 0
                 $this.ForeColor = [System.Drawing.Color]::White
             } else {
                 # Stäng alla andra först
                 Close-AllSubMenus
-                # Öppna denna
+                # Öppna denna och gör texten KRIMSON ORANGE
                 $TargetPanel.Visible = $true
-                $this.ForeColor = [System.Drawing.Color]::FromArgb(0, 122, 204)
+                $TargetPanel.Height = $TargetPanel.Controls.Count * 40
+                $this.ForeColor = [System.Drawing.Color]::FromArgb(255, 180, 0)
             }
-            # Uppdatera layouten (flytta knappar under om det behövs)
-            #Refresh-MenuLayout
+            # Uppdatera layouten (flyttar ner efterföljande knappar automatiskt)
+            Refresh-MenuLayout
         })
     }
 }
 
-# Hjälpfunktion för att flytta knappar upp/ner när menyer öppnas/stängs
+# =========================================================================================
+# ZON 3 HELP: REFRESH LAYOUT (Styr flytten av knappar helt blint utan bredd-beroende)
+# =========================================================================================
 function Refresh-MenuLayout {
-    $SideMenu = $Global:formMain.Controls | Where-Object { $_.Width -eq 220 -and $_ -ne $Global:panelChildForm }
-    $CurrentTop = 10
-    
-    # Sortera kontrollerna så de flyttas i rätt ordning
-    $Controls = $SideMenu.Controls | Sort-Object Location.Y
-    foreach ($Control in $Controls) {
-        if ($Control.Name -like "btnMain_*") {
-            $Control.Location = New-Object System.Drawing.Point(0, $CurrentTop)
-            $CurrentTop += 45
-            
-            $SubName = "panelSubMenu_$($Control.Name.Substring(8))"
-            $SubPanel = $Global:SubMenuPanels[$SubName]
-            if ($SubPanel -and $SubPanel.Visible) {
-                $SubPanel.Location = New-Object System.Drawing.Point(0, $CurrentTop)
-                $CurrentTop += $SubPanel.Height
-            }
+    # Startpositionen precis under Kriminalvårdens logotyp
+    $CurrentTop = 135
+
+    # Vi definierar dina menyer i exakt den ordning de ska ligga på skärmen
+    $MenuOrder = @("Daily", "Release", "Statistik", "Tools")
+
+    foreach ($MenuName in $MenuOrder) {
+        # 1. Hämta huvudknappen med dess exakta namn och flytta den
+        $BtnName = "btnMain_$MenuName"
+        $MainMenuBtn = $panelLeftContainer.Controls[$BtnName]
+        if (-not $MainMenuBtn) { $MainMenuBtn = Get-Variable -Name $BtnName -ValueOnly -ErrorAction SilentlyContinue }
+
+        if ($MainMenuBtn) {
+            $MainMenuBtn.Location = New-Object System.Drawing.Point(0, $CurrentTop)
+            $CurrentTop += 40 # Flytta ner till nästa position
+        }
+
+        # 2. Hämta tillhörande underpanel och flytta den direkt under sin knapp
+        $SubPanelName = "panelSubMenu_$MenuName"
+        $SubPanel = $Global:SubMenuPanels[$SubPanelName]
+
+        if ($SubPanel -and $SubPanel.Visible) {
+            $SubPanel.Location = New-Object System.Drawing.Point(0, $CurrentTop)
+            $CurrentTop += $SubPanel.Height # Öka med panelens faktiska utfällda höjd
         }
     }
 }
-
-
 
 # =========================================================================================
 # ZON 4: REGISTERHANTERING, INSTÄLLNINGAR OCH HUVUDFÖNSTER (WinForms)
@@ -379,6 +399,31 @@ function Create-FormMain {
     [void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
     [void][System.Reflection.Assembly]::LoadWithPartialName("System.Drawing")
 
+    $Global:logoBase64String = @"
+iVBORw0KGgoAAAANSUhEUgAAAI0AAABMCAMAAABnNMSGAAAABGdBTUEAALGPC/xhBQAAAAFzUkdCAK7OHOkAAACWUExURUdwTP7y2f////7z3v////////////////nu2f///////////////////
+/////////////+0AP////////20B/////+0AP+0AP////+0AP21DThCgf+0ANSkNlRek623zmtymjM1Z5iiwH6IsEVPiRMdaf////+0AOLs8SIqbf+2AMuSF8PN3YJkOHqErF5omoeRtYyWuUTQLd
+QAAAAldFJOUwAE9wxO7XaJFSa34x0/M6vET2TOkNly65zQsfws/q3+j/w4XdSvOx2sAAAIT0lEQVRo3s2ai3qiOhCACeEqoNwF9Fitiquu7dn3f7kzl3Dxgu2e3Y92+hVCCMnPZGYyodW0WxFRtdS
++jYi0jL4Pjcy/E016OMy/DY5THg6H6ttMFNKk32amonL+TZxKOMsoStM8ipbyq+coyqtyfmCZl1W+FF/GsszLeQk2U6JPpXPAgRmLnK9hSecwdj4/VMsIaJZReSjzHA/j80jAKCMJWqkcLUcabQna
+ibh+5PlaVjA3EjHKJUW/A0S/iIIg3RpTPSKaU/CF0yHXWhpRERwqrBzP4UXOKwHGYBwWKYgqwigo6P6IC1dVpvjuTgVmTKpS0Q9WzznQYIYxz0cLvWmkCS4sm5qbgsjTseaqUmYBZvOkMNZU5QceS
+hnv48J8LN1E4MJLNA4w5rwppDeFciwnhzAHPpWr1WmgUI0VASm7Sku1WHaFql8zWr5D8SXCpRJ/7gp06zCah2tplUdC5nk6z/NIawptjVimY24i8lJqSwd1BBp4UJDg4eMtDdEhzSG1wpnJHxfKcr
+x1c9mke8NSjZdUyPJDmjG3ENWHNOO51HZb/fORrLevXXxyXdxOCN/1hXRBHJ5GrOCT27ZQJX7EwUtsouGjVw006IhNc3H8WDbHVWs5lplN4WR4ZgEHkKwIaIjQLASesM6ACjfBEt6LTTxZpueZExh
+czMwQx3ZCrInx4UCdtcX+M9LR2LUeYI+1bmhGTUI9+V49gUauWWd6beEIep3VNd6y6tqgB7PahDcRkzpDGm5aYKfQkfUHNFOzhveDTkJ7otdm0NIAQ+HREHGtF8xlITk8aNo60jU0BjTNatQWFv+E
+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
+"@
+
     # Läs miljöval från registret direkt vid start
     Get-KrimsonSettings 
 
@@ -393,67 +438,78 @@ function Create-FormMain {
     # 1. SIDOMENY BEHÅLLARE (VÄNSTER)
     # =========================================================================================
     $panelLeftContainer = New-Object System.Windows.Forms.Panel
-    $panelLeftContainer.Width = 220
+    $panelLeftContainer.Width = 180
     $panelLeftContainer.Dock = [System.Windows.Forms.DockStyle]::Left
-    $panelLeftContainer.BackColor = [System.Drawing.Color]::FromArgb(23, 23, 33)
-    $Global:formMain.Controls.Add($panelLeftContainer)
+    $panelLeftContainer.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
 
-    # Logo-panel (Högst upp till vänster, fast höjd 80)
-    $panelLogo = New-Object System.Windows.Forms.Panel
-    $panelLogo.Size = New-Object System.Drawing.Size(220, 110)
-    $panelLogo.Location = New-Object System.Drawing.Point(0, 0)
-    $panelLogo.BackColor = [System.Drawing.Color]::FromArgb(23, 23, 33)
-    
-    # Din logotyp-ruta (Här dubbelklickar du för att byta miljö!)
+    # Klistra in din långa Base64-textsträng från gamla Tools.ps1 mellan citattecknen:
+    $logoBase64String = $Global:logoBase64String
+
+    # Konvertera binärsträngen till en bild i minnet
+    $imageBytes = [System.Convert]::FromBase64String($logoBase64String)
+    $ms = New-Object System.IO.MemoryStream($imageBytes, 0, $imageBytes.Length)
+    $ms.Write($imageBytes, 0, $imageBytes.Length)
+    $ms.Position = 0  # <--- DENNA RAD SÄKRAR ATT BILDEN LÄSES FRÅN BÖRJAN!
+    $logoImage = [System.Drawing.Image]::FromStream($ms, $true)
+
+    # Din logotyp-ruta (Klickbar med hand-muspekare)
     $pictureBoxLogo = New-Object System.Windows.Forms.PictureBox
-    $pictureBoxLogo.Size = New-Object System.Drawing.Size(180, 50)
-    $pictureBoxLogo.Location = New-Object System.Drawing.Point(20, 30)
-    $pictureBoxLogo.BackColor = [System.Drawing.Color]::FromArgb(0, 122, 204) # Loggan
-    $pictureBoxLogo.Add_DoubleClick({ Show-FormSettings })
-    $panelLogo.Controls.Add($pictureBoxLogo)
-    $panelLeftContainer.Controls.Add($panelLogo)
+    $pictureBoxLogo.Location = New-Object System.Drawing.Point(12, 18)
+    $pictureBoxLogo.BackColor = [System.Drawing.Color]::Transparent
+    $pictureBoxLogo.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::AutoSize
+    $pictureBoxLogo.Image = $logoImage
+        
+    # Ändra muspekaren till en hand när man hovrar över loggan
+    $pictureBoxLogo.Cursor = [System.Windows.Forms.Cursors]::Hand
+
+    # Klick-händelse: Öppnar inställningarna direkt
+    $pictureBoxLogo.Add_Click({ Show-FormSettings })
+
+    $panelLeftContainer.Controls.Add($pictureBoxLogo)
 
     # =========================================================================================
-    # 2. TOPPANEL (RUBRIK OCH MILJÖINFO HÖGST UPP)
-    # =========================================================================================
-    $panelTop = New-Object System.Windows.Forms.Panel
-    $panelTop.Height = 60
-    $panelTop.Dock = [System.Windows.Forms.DockStyle]::Top
-    $panelTop.BackColor = [System.Drawing.Color]::FromArgb(37, 37, 56)
-
-    # Rubrik som ändras dynamiskt via Invoke-Screen (t.ex. "Ärenden")
-    $Global:labelPanelTopLeft = New-Object System.Windows.Forms.Label
-    $Global:labelPanelTopLeft.Text = "KrimsonTools"
-    $Global:labelPanelTopLeft.ForeColor = [System.Drawing.Color]::White
-    $Global:labelPanelTopLeft.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
-    $Global:labelPanelTopLeft.Location = New-Object System.Drawing.Point(20, 15)
-    $Global:labelPanelTopLeft.AutoSize = $true
-
-    # Miljö- och serverstatus till höger
-    $Global:labelPanelTopRight = New-Object System.Windows.Forms.Label
-    $Global:labelPanelTopRight.Text = "Miljö: [$Global:ActiveEnvironment] | Server: $Global:SCSMServer"
-    $Global:labelPanelTopRight.ForeColor = [System.Drawing.Color]::LightGray
-    $Global:labelPanelTopRight.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-    $Global:labelPanelTopRight.Location = New-Object System.Drawing.Point(500, 20)
-    $Global:labelPanelTopRight.Anchor = [System.Windows.Forms.AnchorStyles]::Right
-    $Global:labelPanelTopRight.AutoSize = $true
-
-    $panelTop.Controls.AddRange(@($Global:labelPanelTopLeft, $Global:labelPanelTopRight))
-    $Global:formMain.Controls.Add($panelTop)
-
-    # =========================================================================================
-    # 3. HÖGERPANELEN (Fyller ut hela det resterande utrymmet till höger)
+    # 2. HÖGERPANELEN (Fyller ut hela det resterande utrymmet till höger)
     # =========================================================================================
     $Global:panelChildForm = New-Object System.Windows.Forms.Panel
     $Global:panelChildForm.Dock = [System.Windows.Forms.DockStyle]::Fill 
     $Global:panelChildForm.BackColor = [System.Drawing.Color]::FromArgb(31, 31, 43)
+
+    # =========================================================================================
+    # 3. STATUSRAD (LÄNGST NER - APPLICERAR ORANGE FÄRG OCH GLOBAL TEXT)
+    # =========================================================================================
+    # HÄR SKAPAS DEN GLOBALA VARIABELN SOM MENYN BEHÖVER:
+    $Global:toolStripStatusLabelLeft = New-Object System.Windows.Forms.ToolStripStatusLabel
+    $Global:toolStripStatusLabelLeft.Name = "toolStripStatusLabelLeft"
+    $Global:toolStripStatusLabelLeft.Text = ""
+
+    $statusStrip = New-Object System.Windows.Forms.StatusStrip
+    $statusStrip.AutoSize = $False
+    $statusStrip.BackColor = [System.Drawing.Color]::FromArgb(255, 180, 0) # Orange #FFB400
+    $statusStrip.Dock = [System.Windows.Forms.DockStyle]::Bottom
+    $statusStrip.Font = New-Object System.Drawing.Font("Verdana", 10)
+    $statusStrip.GripStyle = [System.Windows.Forms.ToolStripGripStyle]::Hidden
+    $statusStrip.Items.AddRange($Global:toolStripStatusLabelLeft)
+    $statusStrip.Name = "statusStrip"
+    $statusStrip.Size = New-Object System.Drawing.Size(0, 24)
+
+    # =========================================================================================
+    # 4. MONTERING AV KONTROLLER (HÄR STYRS ORDNINGEN SÅ ATT MENYN GÅR HELA VÄGEN NER)
+    # =========================================================================================
+    # 1. Lägg till högerpanelen (Arbetsytan) först
     $Global:formMain.Controls.Add($Global:panelChildForm)
 
-    # 🛠️ HÄR STARTAR VI MENYN:
+    # 2. Lägg till statusraden (Den lägger sig nu i botten till höger om menyn)
+    $Global:formMain.Controls.Add($statusStrip)
+
+    # 3. Lägg till sidomenyns behållare SIST (Då tillåts den ta hela höjden från topp till botten)
+    $Global:formMain.Controls.Add($panelLeftContainer)
+
+    # HÄR STARTAR VI MENYN INUTI BEHÅLLAREN:
     Build-DynamicMenu -ParentContainer $panelLeftContainer
 
     # Visa fönstret
     [System.Windows.Forms.Application]::Run($Global:formMain)
+
 }
 
 # =========================================================================================
@@ -562,10 +618,6 @@ Top, Bottom, Left, Right
     $Global:panelChildForm.Refresh()
 }
 
-
-
-
-
 function Create-FormForberedelseSteg1 {
     $lblRelease = New-Object System.Windows.Forms.Label
     $lblRelease.Text = "Här kommer dina releaseförberedelser och mappar (Get-ChildItem) att ligga!"
@@ -596,12 +648,5 @@ function Create-FormKontakter {
     $Global:panelChildForm.Controls.Add($lblKontakter)
 }
 
-
-
-
-
-
-
 # Starta applikationen och visa fönstret!
 Create-FormMain
-

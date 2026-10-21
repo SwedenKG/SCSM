@@ -129,9 +129,14 @@ function Close-AllSubMenus {
     foreach ($Key in $Global:SubMenuPanels.Keys) {
         $Global:SubMenuPanels[$Key].Visible = $false
     }
-    # 🛠️ RÄTTAD RAD: Använder -Name istället för -Pattern för att fungera i standard Windows PowerShell
-    Get-Variable -Name "btnMain_*" -ErrorAction SilentlyContinue | ForEach-Object {
-        if ($_.Value) { $_.Value.ForeColor = [System.Drawing.Color]::FromArgb(255, 255, 255) }
+    
+    # Återställ textfärgen till vit på ALLA huvudknappar i sidomenyn
+    if ($Global:panelSideMenu) {
+        foreach ($Control in $Global:panelSideMenu.Controls) {
+            if ($Control.Name -like "btnMain_*") {
+                $Control.ForeColor = [System.Drawing.Color]::White
+            }
+        }
     }
 }
 
@@ -173,7 +178,7 @@ function Build-DynamicMenu {
     param($ParentContainer) 
     
     # 🛠️ 2. Ändra till variabeln från parametern här!
-    $panelSideMenu = $ParentContainer
+    $Global:panelSideMenu = $ParentContainer
 
     # --- DYNAMISK BREDDBERÄKNING ---
     $MinBredd = 180
@@ -208,7 +213,7 @@ function Build-DynamicMenu {
         $btnMainMenu = New-Object System.Windows.Forms.Button
         $btnMainMenu.Name = "btnMain_$MainMenu"
         $btnMainMenu.Text = $MainMenu
-        $btnMainMenu.Size = New-Object System.Windows.Forms.Size($panelSideMenu.Width, 40)
+        $btnMainMenu.Size = New-Object System.Drawing.Size($panelSideMenu.Width, 40)
         $btnMainMenu.Location = New-Object System.Drawing.Point(0, $CurrentTop)
         $btnMainMenu.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
         $btnMainMenu.FlatAppearance.BorderSize = 0
@@ -255,7 +260,7 @@ function Build-DynamicMenu {
         foreach ($Item in $SubItems) {
             $btnSubMenu = New-Object System.Windows.Forms.Button
             $btnSubMenu.Text = $Item.SubMenu
-            $btnSubMenu.Size = New-Object System.Windows.Forms.Size($panelSideMenu.Width, 40)
+            $btnSubMenu.Size = New-Object System.Drawing.Size($panelSideMenu.Width, 40)
             $btnSubMenu.Location = New-Object System.Drawing.Point(0, $SubTop)
             $btnSubMenu.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
             $btnSubMenu.FlatAppearance.BorderSize = 0
@@ -337,7 +342,7 @@ function Refresh-MenuLayout {
     
     foreach ($MenuName in $MenuOrder) {
         $BtnName = "btnMain_$MenuName"
-        $MainMenuBtn = $panelSideMenu.Controls[$BtnName]
+        $MainMenuBtn = $Global:panelSideMenu.Controls[$BtnName]
         if ($MainMenuBtn) {
             $MainMenuBtn.Location = New-Object System.Drawing.Point(0, $CurrentTop)
             $CurrentTop += 40
@@ -356,62 +361,25 @@ function Refresh-MenuLayout {
 # ZON 4: REGISTERHANTERING, INSTÄLLNINGAR OCH HUVUDFÖNSTER (WinForms)
 # =========================================================================================
 
-$Global:RegPath = "HKCU:\Software\KrimsonTools"
+$Global:RegPath = "HKCU:\Software\KrimsonTools\Settings\MiljoProfiler"
 $Global:SCSMServer = "scsm-server.domain.local" # Standard fallback om registret är tomt
 
 # Funktion för att hämta inställningar från registret
 function Get-KrimsonSettings {
-    if (Test-Path $Global:RegPath) {
-        $Settings = Get-ItemProperty -Path $Global:RegPath -ErrorAction SilentlyContinue
-        if ($Settings.SCSMServer) { $Global:SCSMServer = $Settings.SCSMServer }
+    if (-not (Test-Path $Global:RegPath)) {
+        New-Item -Path $Global:RegPath -Force | Out-Null
     }
 }
 
 # Funktion för att spara inställningar till registret
-function Save-KrimsonSettings {
-    param ([string]$ServerName)
-    if (-not (Test-Path $Global:RegPath)) {
-        New-Item -Path "HKCU:\Software" -Name "KrimsonTools" -Force | Out-Null
-    }
-    Set-ItemProperty -Path $Global:RegPath -Name "SCSMServer" -Value $ServerName -Force
-    $Global:SCSMServer = $ServerName
-    Write-Host "[✓] Inställningar sparade i registret: $ServerName" -ForegroundColor Green
-}
 
-# Dold inställningsvy (öppnas via dubbelklick på loggan)
-function Show-FormSettings {
-    $formSettings = New-Object System.Windows.Forms.Form
-    $formSettings.Text = "KrimsonTools - Inställningar"
-    $formSettings.Size = New-Object System.Drawing.Size(400,200)
-    $formSettings.StartPosition = "CenterParent"
-    $formSettings.FormBorderStyle = "FixedDialog"
-    $formSettings.MaximizeBox = $false
-
-    $lblServer = New-Object System.Windows.Forms.Label
-    $lblServer.Text = "SCSM Server:"
-    $lblServer.Location = New-Object System.Drawing.Point(20,30)
-    $lblServer.Size = New-Object System.Drawing.Size(100,20)
-
-    $txtServer = New-Object System.Windows.Forms.TextBox
-    $txtServer.Text = $Global:SCSMServer
-    $txtServer.Location = New-Object System.Drawing.Point(130,27)
-    $txtServer.Size = New-Object System.Drawing.Size(220,20)
-
-    $btnSave = New-Object System.Windows.Forms.Button
-    $btnSave.Text = "Spara"
-    $btnSave.Location = New-Object System.Drawing.Point(275,100)
-    $btnSave.DialogResult = [System.Windows.Forms.DialogResult]::OK
-
-    $formSettings.Controls.AddRange(@($lblServer, $txtServer, $btnSave))
-
-    if ($formSettings.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        Save-KrimsonSettings -ServerName $txtServer.Text
-        if ($Global:labelPanelTopRight) { $Global:labelPanelTopRight.Text = "Server: $Global:SCSMServer" }
-    }
-}
 
 # HUVUDFÖNSTER (Skapar själva grundskalet)
 function Create-FormMain {
+
+    # Läs miljöval från registret direkt vid start
+    Get-KrimsonSettings
+
     [void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
     [void][System.Reflection.Assembly]::LoadWithPartialName("System.Drawing")
 
@@ -440,9 +408,6 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
 /mweFBqy+LuBl2K2x6ebdHE62pzw7JYv37h/yZtV4suh9js1q9f979JrJ/tarcA2e3W26/4t6T/APFx2ILozLglAAAAAElFTkSuQmCC
 "@
 
-    # Läs miljöval från registret direkt vid start
-    Get-KrimsonSettings 
-
     # HUVUDFÖNSTER
     $Global:formMain = New-Object System.Windows.Forms.Form
     $Global:formMain.Text = "KrimsonTools v1.0"
@@ -455,6 +420,8 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     # =========================================================================================
     # --- # 1. SIDOMENY BEHÅLLARE (Vänster) ---
     $panelLeftContainer = New-Object System.Windows.Forms.Panel
+    $panelLeftContainer.Width = 240
+    $panelLeftContainer.Dock = [System.Windows.Forms.DockStyle]::Left
     $panelLeftContainer.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
 
     # Klistra in din långa Base64-textsträng från gamla Tools.ps1 mellan citattecknen:
@@ -478,14 +445,38 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     $pictureBoxLogo.Cursor = [System.Windows.Forms.Cursors]::Hand
 
     # Klick-händelse: Öppnar inställningarna direkt
-    $pictureBoxLogo.Add_Click({ Show-FormSettings })
+    $pictureBoxLogo.Add_Click({ Invoke-Screen -TargetFunction "Create-FormSettings" -TitleLeft "Konfiguration" -TitleRight "Miljöprofiler" })
 
     $panelLeftContainer.Controls.Add($pictureBoxLogo)
 
-    # =========================================================================================
-    # 2. HÖGERPANELEN (Fyller ut hela det resterande utrymmet till höger)
-    # =========================================================================================
+    # --- # 2. TOPPANEL (Mörkblå överkant) ---
+    $panelTop = New-Object System.Windows.Forms.Panel
+    $panelTop.Height = 60
+    $panelTop.Padding = New-Object System.Windows.Forms.Padding($panelLeftContainer.Width, 0, 0, 0)
+    $panelTop.Dock = [System.Windows.Forms.DockStyle]::Top
+    $panelTop.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105) # Din mörkblå färg
+
+    # Vänster text i toppanelen (Aktiv flik)
+    $Global:lblTitleLeft = New-Object System.Windows.Forms.Label
+    $Global:lblTitleLeft.Text = "KrimsonTools"
+    $Global:lblTitleLeft.Font = New-Object System.Drawing.Font("Verdana", 14, [System.Drawing.FontStyle]::Bold)
+    $Global:lblTitleLeft.ForeColor = [System.Drawing.Color]::White
+    $Global:lblTitleLeft.Location = New-Object System.Drawing.Point(20, 15)
+    $Global:lblTitleLeft.AutoSize = $true
+    $panelTop.Controls.Add($Global:lblTitleLeft)
+
+    # Höger text i toppanelen (Aktiv underfunktion)
+    $Global:lblTitleRight = New-Object System.Windows.Forms.Label
+    $Global:lblTitleRight.Text = ""
+    $Global:lblTitleRight.Font = New-Object System.Drawing.Font("Verdana", 12)
+    $Global:lblTitleRight.ForeColor = [System.Drawing.Color]::FromArgb(255, 180, 0) # Orange text
+    $Global:lblTitleRight.Location = New-Object System.Drawing.Point(300, 18)
+    $Global:lblTitleRight.AutoSize = $true
+    $panelTop.Controls.Add($Global:lblTitleRight)
+
+    # # 2. HÖGERPANELEN (Fyller ut hela det resterande utrymmet till höger)
     $Global:panelChildForm = New-Object System.Windows.Forms.Panel
+
     $Global:panelChildForm.Dock = [System.Windows.Forms.DockStyle]::Fill 
     $Global:panelChildForm.BackColor = [System.Drawing.Color]::FromArgb(31, 31, 43)
 
@@ -510,21 +501,31 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     # =========================================================================================
     # 4. MONTERING AV KONTROLLER (HÄR STYRS ORDNINGEN SÅ ATT MENYN GÅR HELA VÄGEN NER)
     # =========================================================================================
-    # 1. Lägg till högerpanelen (Arbetsytan) först
-    $Global:formMain.Controls.Add($Global:panelChildForm)
+    # 1. Lägg till och docka sidomenyn absolut FÖRST (hela vänsterkanten från topp till botten)
+    $Global:formMain.Controls.Add($panelLeftContainer)
+    $panelLeftContainer.Dock = [System.Windows.Forms.DockStyle]::Left
 
-    # 2. Lägg till statusraden (Den lägger sig nu i botten till höger om menyn)
+    # 2. Lägg till toppanelen i huvudfönstret (Då börjar den till höger om menyn och dockar perfekt!)
+    $Global:formMain.Controls.Add($panelTop)
+    $panelTop.Dock = [System.Windows.Forms.DockStyle]::Top
+
+    # 3. Lägg till statusraden i botten
     $Global:formMain.Controls.Add($statusStrip)
 
-    # 3. Kör den dynamiska menyn FÖRST så att bredden räknas ut i bakgrunden
+    # 4. Kör den dynamiska menyn så att bredden räknas ut
     Build-DynamicMenu -ParentContainer $panelLeftContainer
 
-    # 4. Lägg till sidomenyns behållare i fönstret NU när storleken är satt
-    $Global:formMain.Controls.Add($panelLeftContainer)
-
-    # 5. NU dockar vi den till vänster så att den låser sig snyggt
-    $panelLeftContainer.Dock = [System.Windows.Forms.DockStyle]::Left
+    # Tvinga sidomenyn att äga hela vänsterkanten från topp till botten
+    $Global:formMain.Controls.SetChildIndex($panelLeftContainer, 0)
     
+    # Tvinga topp-bannern att lägga sig till höger om menyn
+    $Global:formMain.Controls.SetChildIndex($panelTop, 1)
+
+    # 5. Lägg till högerpanelen (Arbetsytan) ALLRA SIST
+    # Eftersom sidomenyn tagit vänstern och toppanelen tagit toppen, 
+    # kommer denna automatiskt fylla ut resterande utrymme under rubrikraden!
+    $Global:formMain.Controls.Add($Global:panelChildForm)
+
     # Tvinga fönstret att uppdatera grafiken
     $Global:formMain.Refresh()
 
@@ -536,6 +537,276 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
 # =========================================================================================
 # ZON 5: SKÄRMFUNKTIONER (Platshållare för dina vyer)
 # =========================================================================================
+
+function Create-FormSettings {
+    # 1. HUVUDPANEL (Mörkt tema) samt hantering av miljöprofiler (Dropdown, +, -)
+    $panelSettings = New-Object System.Windows.Forms.Panel
+    $panelSettings.Size = $Global:panelChildForm.Size
+    $panelSettings.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $panelSettings.BackColor = [System.Drawing.Color]::FromArgb(31, 31, 43)
+
+    $FontRubrik = New-Object System.Drawing.Font("Verdana", 10, [System.Drawing.FontStyle]::Bold)
+    $FontFalt = New-Object System.Drawing.Font("Verdana", 9)
+    $FontEtikett = New-Object System.Drawing.Font("Verdana", 9, [System.Drawing.FontStyle]::Bold)
+
+    # --- PROFIL-VAL (DROPDOWN) ---
+    $lblVäljMiljö = New-Object System.Windows.Forms.Label
+    $lblVäljMiljö.Text = "Miljöprofil:"
+    $lblVäljMiljö.Font = $FontRubrik
+    $lblVäljMiljö.ForeColor = [System.Drawing.Color]::FromArgb(255, 180, 0) # Krimson Orange
+    $lblVäljMiljö.Location = New-Object System.Drawing.Point(30, 25)
+    $lblVäljMiljö.AutoSize = $true
+    $panelSettings.Controls.Add($lblVäljMiljö)
+
+    $Global:comboMiljöer = New-Object System.Windows.Forms.ComboBox
+    $Global:comboMiljöer.Location = New-Object System.Drawing.Point(160, 21)
+    $Global:comboMiljöer.Size = New-Object System.Drawing.Size(180, 25)
+    $Global:comboMiljöer.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    $Global:comboMiljöer.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
+    $Global:comboMiljöer.ForeColor = [System.Drawing.Color]::White
+    $Global:comboMiljöer.Font = $FontRubrik
+    $panelSettings.Controls.Add($Global:comboMiljöer)
+
+    # Funktion för att läsa in profiler från registret till dropdownen
+    function Refresh-ProfileDropdown {
+        $Global:comboMiljöer.Items.Clear()
+        if (Test-Path $Global:RegPath) {
+            $SubKeys = Get-ChildItem -Path $Global:RegPath | Select-Object -ExpandProperty PSChildName
+            foreach ($Key in $SubKeys) {
+                [void]$Global:comboMiljöer.Items.Add($Key)
+            }
+        }
+        # Fallback om registret är helt tomt vid första start
+        if ($Global:comboMiljöer.Items.Count -eq 0) {
+            foreach ($Standard in @("Prod", "PreProd", "Test", "IT")) {
+                [void]$Global:comboMiljöer.Items.Add($Standard)
+            }
+        }
+        if ($Global:comboMiljöer.Items.Count -gt 0) { $Global:comboMiljöer.SelectedIndex = 0 }
+    }
+
+    # PLUS-KNAPP (Skapa ny profil)
+    $btnPlus = New-Object System.Windows.Forms.Button
+    $btnPlus.Text = "+"
+    $btnPlus.Font = New-Object System.Drawing.Font("Verdana", 12, [System.Drawing.FontStyle]::Bold)
+    $btnPlus.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnPlus.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(255, 180, 0)
+    $btnPlus.ForeColor = [System.Drawing.Color]::LightGreen
+    $btnPlus.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
+    $btnPlus.Location = New-Object System.Drawing.Point(350, 20)
+    $btnPlus.Size = New-Object System.Drawing.Size(35, 25)
+    $panelSettings.Controls.Add($btnPlus)
+
+    # MINUS-KNAPP (Ta bort vald profil)
+    $btnMinus = New-Object System.Windows.Forms.Button
+    $btnMinus.Text = "-"
+    $btnMinus.Font = New-Object System.Drawing.Font("Verdana", 12, [System.Drawing.FontStyle]::Bold)
+    $btnMinus.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnMinus.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(255, 180, 0)
+    $btnMinus.ForeColor = [System.Drawing.Color]::Red
+    $btnMinus.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
+    $btnMinus.Location = New-Object System.Drawing.Point(390, 20)
+    $btnMinus.Size = New-Object System.Drawing.Size(35, 25)
+    $panelSettings.Controls.Add($btnMinus)
+
+    # --- KLICK-HÄNDELSE FÖR PLUS-KNAPPEN (SKAPA NY PROFIL) ---
+    $btnPlus.Add_Click({
+        # Ladda VB Interaction för en smidig InputBox-dialog
+        [void][System.Reflection.Assembly]::LoadWithPartialName("Microsoft.VisualBasic")
+        $NyProfil = [Microsoft.VisualBasic.Interaction]::InputBox("Ange namn på den nya miljöprofilen (t.ex. Utv, Staging, Lab):", "Skapa miljöprofil")
+        
+        if (-not [string]::IsNullOrWhiteSpace($NyProfil)) {
+            $Path = "$($Global:RegPath)\$NyProfil"
+            if (-not (Test-Path $Path)) {
+                New-Item -Path $Path -Force | Out-Null
+                Refresh-ProfileDropdown
+                $Global:comboMiljöer.SelectedItem = $NyProfil
+                [System.Windows.Forms.MessageBox]::Show("Profilen '$NyProfil' har skapats!", "Profil skapad", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            } else {
+                [System.Windows.Forms.MessageBox]::Show("En profil med det namnet finns redan.", "Fel", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            }
+        }
+    })
+
+    # --- KLICK-HÄNDELSE FÖR MINUS-KNAPPEN (TA BORT VALD PROFIL) ---
+    $btnMinus.Add_Click({
+        $ValdProfil = $Global:comboMiljöer.SelectedItem
+        if ($ValdProfil) {
+            $Bekräfta = [System.Windows.Forms.MessageBox]::Show("Är du helt säker på att du vill ta bort profilen '$ValdProfil' och alla dess serverinställningar?", "Bekräfta borttagning", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
+            
+            if ($Bekräfta -eq [System.Windows.Forms.DialogResult]::Yes) {
+                $Path = "$($Global:RegPath)\$ValdProfil"
+                if (Test-Path $Path) {
+                    Remove-Item -Path $Path -Recurse -Force
+                }
+                Refresh-ProfileDropdown
+            }
+        }
+    })
+
+    # 2. DEFINITION AV MATRISEN/TABELLEN FÖR SYSTEM OCH ROLLER
+    $SystemMatris = @(
+        @{ System = "SCSM";         Roll = "Server";    Desc = "SCSM Management Servrar" }
+        @{ System = "SCSM";         Roll = "SQLServer"; Desc = "SCSM SQL Server / Instans" }
+        @{ System = "SCSM";         Roll = "DBName";    Desc = "SCSM Databasnamn" }
+        @{ System = "Cireson";      Roll = "Server";    Desc = "Cireson Portal Webbservrar" }
+        @{ System = "Cireson";      Roll = "SQLServer"; Desc = "Cireson SQL Server" }
+        @{ System = "Cireson";      Roll = "DBName";    Desc = "Cireson Portal Databasnamn" }
+        @{ System = "DataWarehouse";Roll = "Server";    Desc = "SCSM DW Management Server" }
+        @{ System = "DataWarehouse";Roll = "SQLServer"; Desc = "SCSM DW SQL Server" }
+        @{ System = "DataWarehouse";Roll = "DBName";    Desc = "SCSM DW Repository Databasnamn" }
+        @{ System = "Orchestrator"; Roll = "Server";    Desc = "SCO Runbook Server / Web Service URL" }
+        @{ System = "Orchestrator"; Roll = "SQLServer"; Desc = "SCO SQL Server" }
+        @{ System = "Orchestrator"; Roll = "DBName";    Desc = "SCO Databasnamn" }
+    )
+
+    # --- DYNAMISK GENERERING AV MATRISEN ---
+    $CurrentTop = 85
+    $Global:MatrixTextBoxes = @{}
+
+    foreach ($Rad in $SystemMatris) {
+        # Skapa en unik identifierare (t.ex. SCSM_Server, SCSM_SQLServer...)
+        $KeyName = "$($Rad.System)_$($Rad.Roll)"
+
+        # Textetikett för fältet (Vänster kolumn)
+        $lblFalt = New-Object System.Windows.Forms.Label
+        $lblFalt.Text = "$($Rad.System) $($Rad.Roll):"
+        $lblFalt.Font = $FontEtikett
+        $lblFalt.ForeColor = [System.Drawing.Color]::White
+        $lblFalt.Location = New-Object System.Drawing.Point(30, ($CurrentTop + 3))
+        $lblFalt.Size = New-Object System.Drawing.Size(140, 20)
+        $panelSettings.Controls.Add($lblFalt)
+
+        # Inmatningsbox (Mittenkolumnen - breddad för kommatecken)
+        $txtFalt = New-Object System.Windows.Forms.TextBox
+        $txtFalt.Font = $FontFalt
+        $txtFalt.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
+        $txtFalt.ForeColor = [System.Drawing.Color]::White
+        $txtFalt.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+        $txtFalt.Location = New-Object System.Drawing.Point(180, $CurrentTop)
+        $txtFalt.Size = New-Object System.Drawing.Size(350, 23)
+        $panelSettings.Controls.Add($txtFalt)
+
+        # Förklarande hjälptext (Höger kolumn)
+        $lblDesc = New-Object System.Windows.Forms.Label
+        $lblDesc.Text = $Rad.Desc
+        $lblDesc.Font = $FontFalt
+        $lblDesc.ForeColor = [System.Drawing.Color]::Gray
+        $lblDesc.Location = New-Object System.Drawing.Point(540, ($CurrentTop + 3))
+        $lblDesc.Size = New-Object System.Drawing.Size(250, 20)
+        $panelSettings.Controls.Add($lblDesc)
+
+        # Spara referens till textrutan globalt så vi kan läsa/skriva till den
+        $Global:MatrixTextBoxes[$KeyName] = $txtFalt
+
+        $CurrentTop += 28
+    }
+
+    # --- HÄNDELSEHANTERING FÖR DROPDOWN (LÄS FRÅN REGISTRET) ---
+    $Global:comboMiljöer.Add_SelectedIndexChanged({
+        $ValdProfil = $Global:comboMiljöer.SelectedItem
+        if ($ValdProfil) {
+            $Path = "$($Global:RegPath)\$ValdProfil"
+            
+            # Töm alla fält först ifall profilen är ny eller saknar värden
+            foreach ($Key in $Global:MatrixTextBoxes.Keys) {
+                $Global:MatrixTextBoxes[$Key].Text = ""
+            }
+
+            # Om nyckeln finns i registret, läs in värdena till rätt textruta
+            if (Test-Path $Path) {
+                foreach ($Key in $Global:MatrixTextBoxes.Keys) {
+                    $Varde = Get-ItemProperty -Path $Path -Name $Key -ErrorAction SilentlyContinue
+                    if ($Varde -and $Varde.$Key) {
+                        $Global:MatrixTextBoxes[$Key].Text = $Varde.$Key
+                    }
+                }
+            }
+        }
+    })
+
+    # --- GLOBAL SPARA-KNAPP ---
+    $btnSave = New-Object System.Windows.Forms.Button
+    $btnSave.Text = "Spara Profilinställningar"
+    $btnSave.Font = $FontRubrik
+    $btnSave.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnSave.FlatAppearance.BorderSize = 1
+    $btnSave.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(255, 180, 0)
+    $btnSave.ForeColor = [System.Drawing.Color]::White
+    $btnSave.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
+    $btnSave.Location = New-Object System.Drawing.Point(180, ($CurrentTop + 15))
+    $btnSave.Size = New-Object System.Drawing.Size(220, 35)
+
+    $btnSave.Add_Click({
+        $ValdProfil = $Global:comboMiljöer.SelectedItem
+        if (-not $ValdProfil) { return }
+
+        $Path = "$($Global:RegPath)\$ValdProfil"
+        if (-not (Test-Path $Path)) {
+            New-Item -Path $Path -Force | Out-Null
+        }
+
+        # Loopa igenom matrisen och skriv alla 12 värden till den valda profilens regnyckel
+        foreach ($Key in $Global:MatrixTextBoxes.Keys) {
+            Set-ItemProperty -Path $Path -Name $Key -Value $Global:MatrixTextBoxes[$Key].Text -Force
+        }
+
+        [System.Windows.Forms.MessageBox]::Show("Inställningarna för profilen '$ValdProfil' har sparats i registret!", "Konfiguration sparad", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+    })
+    $panelSettings.Controls.Add($btnSave)
+    $Global:panelChildForm.Controls.Add($panelSettings)
+}
+
+function Create-FormForberedelseSteg1 {
+    # 1. Skapa huvudpanelen för Release-vyn
+    $panelRelease = New-Object System.Windows.Forms.Panel
+    $panelRelease.Size = $Global:panelChildForm.Size
+    $panelRelease.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $panelRelease.BackColor = [System.Drawing.Color]::FromArgb(31, 31, 43)
+
+    # Rubrik
+    $lblRubrik = New-Object System.Windows.Forms.Label
+    $lblRubrik.Text = "Förberedelse inför release - Välj datummapp"
+    $lblRubrik.Font = New-Object System.Drawing.Font("Verdana", 12, [System.Drawing.FontStyle]::Bold)
+    $lblRubrik.ForeColor = [System.Drawing.Color]::White
+    $lblRubrik.Location = New-Object System.Drawing.Point(30, 25)
+    $lblRubrik.AutoSize = $true
+    $panelRelease.Controls.Add($lblRubrik)
+
+    # ListBox för att visa mapparna på filservern
+    $Global:listBoxMappar = New-Object System.Windows.Forms.ListBox
+    $Global:listBoxMappar.Location = New-Object System.Drawing.Point(30, 70)
+    $Global:listBoxMappar.Size = New-Object System.Drawing.Size(400, 350)
+    $Global:listBoxMappar.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
+    $Global:listBoxMappar.ForeColor = [System.Drawing.Color]::White
+    $Global:listBoxMappar.Font = New-Object System.Drawing.Font("Verdana", 10)
+    $panelRelease.Controls.Add($Global:listBoxMappar)
+
+    # --- MAPPHANTERING BASERAT PÅ AKTIV PROFIL (GET-CHILDITEM) ---
+    $AktivProfil = $Global:comboMiljöer.SelectedItem
+    $MappSökväg = ""
+
+    if ($AktivProfil) {
+        # Kopplar ihop vald profil med dina globala mappsökvägar
+        if ($AktivProfil -eq "Prod")    { $MappSökväg = $Global:MPPath_Prod }
+        if ($AktivProfil -eq "PreProd") { $MappSökväg = $Global:MPPath_PreProd }
+        if ($AktivProfil -eq "Test")    { $MappSökväg = $Global:MPPath_Test }
+        if ($AktivProfil -eq "IT")      { $MappSökväg = $Global:MPPath_IT }
+    }
+
+    # Kör din gamla Get-ChildItem-logik om sökvägen existerar
+    if ($MappSökväg -and (Test-Path $MappSökväg)) {
+        $Mappar = Get-ChildItem -Path $MappSökväg -Directory | Sort-Object LastWriteTime -Descending
+        foreach ($Mapp in $Mappar) {
+            [void]$Global:listBoxMappar.Items.Add($Mapp.Name)
+        }
+    } else {
+        [void]$Global:listBoxMappar.Items.Add("Inga mappar hittades eller sökväg saknas för profil: $AktivProfil")
+    }
+
+    # Montera upp vyn i gränssnittet
+    $Global:panelChildForm.Controls.Add($panelRelease)
+}
 
 function Create-formÄrenden {
     Write-Host "[*] Startar Ärenden-vyn baserat på ditt original-skript..." -ForegroundColor Cyan

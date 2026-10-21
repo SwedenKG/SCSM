@@ -175,6 +175,28 @@ function Build-DynamicMenu {
     # 🛠️ 2. Ändra till variabeln från parametern här!
     $panelSideMenu = $ParentContainer
 
+    # --- DYNAMISK BREDDBERÄKNING ---
+    $MinBredd = 180
+    $MaxBredd = 300
+    $OptimalBredd = $MinBredd
+
+    # Mät texten på alla huvud- och undermenyer
+    foreach ($Item in $Global:MenuConfig) {
+        $Font = New-Object System.Drawing.Font("Verdana", 14)
+        $BreddHuvud = [System.Windows.Forms.TextRenderer]::MeasureText($Item.MainMenu, $Font).Width + 40
+        $BreddUnder = [System.Windows.Forms.TextRenderer]::MeasureText($Item.SubMenu, $Font).Width + 60
+        
+        if ($BreddHuvud -gt $OptimalBredd) { $OptimalBredd = $BreddHuvud }
+        if ($BreddUnder -gt $OptimalBredd) { $OptimalBredd = $BreddUnder }
+    }
+
+    # Håll bredden inom dina gränser
+    if ($OptimalBredd -gt $MaxBredd) { $OptimalBredd = $MaxBredd }
+
+    # Sätt den nya dynamiska bredden på sidomenyn
+    $panelSideMenu.Width = $OptimalBredd
+    $panelLeftContainer.Width = $OptimalBredd
+
     # Gruppera menykonfigurationen per huvudmeny för att rita dem i ordning
     $MainMenus = $Global:MenuConfig | Select-Object -ExpandProperty MainMenu -Unique
 
@@ -186,7 +208,7 @@ function Build-DynamicMenu {
         $btnMainMenu = New-Object System.Windows.Forms.Button
         $btnMainMenu.Name = "btnMain_$MainMenu"
         $btnMainMenu.Text = "  $MainMenu"
-        $btnMainMenu.Size = New-Object System.Windows.Forms.Size($panelLeftContainer.Width, 40)
+        $btnMainMenu.Size = New-Object System.Windows.Forms.Size($panelSideMenu.Width, 40)
         $btnMainMenu.Location = New-Object System.Drawing.Point(0, $CurrentTop)
         $btnMainMenu.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
         $btnMainMenu.FlatAppearance.BorderSize = 0
@@ -218,7 +240,7 @@ function Build-DynamicMenu {
         # --- 2. SKAPA UNDERMENYPANEL (Behållare för underknappar) ---
         $panelSubMenu = New-Object System.Windows.Forms.Panel
         $panelSubMenu.Name = "panelSubMenu_$MainMenu"
-        $panelSubMenu.Width = $panelLeftContainer.Width
+        $panelSubMenu.Width = $panelSideMenu.Width
         $panelSubMenu.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
         $panelSubMenu.Visible = $false # Dold som standard
         
@@ -308,30 +330,22 @@ function Build-DynamicMenu {
 # ZON 3 HELP: REFRESH LAYOUT (Styr flytten av knappar helt blint utan bredd-beroende)
 # =========================================================================================
 function Refresh-MenuLayout {
-    # Startpositionen precis under Kriminalvårdens logotyp
     $CurrentTop = 135
-
-    # Vi definierar dina menyer i exakt den ordning de ska ligga på skärmen
     $MenuOrder = @("Daily", "Release", "Statistik", "Tools")
-
+    
     foreach ($MenuName in $MenuOrder) {
-        # 1. Hämta huvudknappen med dess exakta namn och flytta den
         $BtnName = "btnMain_$MenuName"
-        $MainMenuBtn = $panelLeftContainer.Controls[$BtnName]
-        if (-not $MainMenuBtn) { $MainMenuBtn = Get-Variable -Name $BtnName -ValueOnly -ErrorAction SilentlyContinue }
-
+        $MainMenuBtn = $panelSideMenu.Controls[$BtnName]
         if ($MainMenuBtn) {
             $MainMenuBtn.Location = New-Object System.Drawing.Point(0, $CurrentTop)
-            $CurrentTop += 40 # Flytta ner till nästa position
+            $CurrentTop += 40
         }
-
-        # 2. Hämta tillhörande underpanel och flytta den direkt under sin knapp
+        
         $SubPanelName = "panelSubMenu_$MenuName"
         $SubPanel = $Global:SubMenuPanels[$SubPanelName]
-
         if ($SubPanel -and $SubPanel.Visible) {
             $SubPanel.Location = New-Object System.Drawing.Point(0, $CurrentTop)
-            $CurrentTop += $SubPanel.Height # Öka med panelens faktiska utfällda höjd
+            $CurrentTop += $SubPanel.Height
         }
     }
 }

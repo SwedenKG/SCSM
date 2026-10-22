@@ -148,6 +148,9 @@ function Invoke-Screen {
         [string]$TitleRight = ""
     )
 
+    # Nollställ inställningsflaggan så fort vi laddar en vanlig skärm
+    $Global:SettingsIsOpen = $false
+
     # 1. Rensa och frigör minnet från alla gamla kontroller så att inte ISE hänger sig
     if ($Global:panelChildForm) {
         while ($Global:panelChildForm.Controls.Count -gt 0) {
@@ -361,8 +364,103 @@ function Refresh-MenuLayout {
 # ZON 4: REGISTERHANTERING, INSTÄLLNINGAR OCH HUVUDFÖNSTER (WinForms)
 # =========================================================================================
 
+# =========================================================================================
+# GLOBAL LOGGNINGSFUNKTION (ZON 4)
+# =========================================================================================
+$Global:GlobalRegPath = "HKCU:\Software\KrimsonTools\Settings\Global"
+$Global:LogBuffer = New-Object "System.Text.StringBuilder"
+
+# Läs in globala logginställningar från registret (Standard: Av, log.txt bredvid skriptet)
+$Global:LogEnabled = $false
+$Global:LogFilePath = Join-Path $PSScriptRoot "KrimsonTools_Log.txt"
+
+if (Test-Path $Global:GlobalRegPath) {
+    $RegLogEnabled = Get-ItemProperty -Path $Global:GlobalRegPath -Name "LogEnabled" -ErrorAction SilentlyContinue
+    if ($RegLogEnabled) { $Global:LogEnabled = [System.Convert]::ToBoolean($RegLogEnabled.LogEnabled) }
+    
+    $RegLogPath = Get-ItemProperty -Path $Global:GlobalRegPath -Name "LogFilePath" -ErrorAction SilentlyContinue
+    if ($RegLogPath) { $Global:LogFilePath = $RegLogPath.LogFilePath }
+}
+
+function Write-KrimsonLog {
+    param (
+        [string]$Message
+    )
+    # Skapa tidsstämpel: [2026-10-22 16:00:05]
+    $TimeStamp = [DateTime]::Now.ToString("yyyy-MM-dd HH:mm:ss")
+    $LogLine = "[$TimeStamp] $Message"
+    
+    # Skriv till internminnes-buffer (så att loggvisaren kan läsa den blixtsnabbt)
+    [void]$Global:LogBuffer.AppendLine($LogLine)
+    
+    # Om loggvisaren är öppen live just nu, uppdatera dess textruta direkt
+    if ($Global:txtLogView -and $Global:txtLogView.IsDisposed -eq $false) {
+        $Global:txtLogView.AppendText($LogLine + [Environment]::NewLine)
+    }
+    
+    # Om loggning är aktiverad till fil, skriv direkt till textfilen
+    if ($Global:LogEnabled -eq $true) {
+        try {
+            $LogLine | Out-File -FilePath $Global:LogFilePath -Append -Encoding utf8 -ErrorAction SilentlyContinue
+        } catch {}
+    }
+}
+
 $Global:RegPath = "HKCU:\Software\KrimsonTools\Settings\MiljoProfiler"
 $Global:SCSMServer = "scsm-server.domain.local" # Standard fallback om registret är tomt
+
+# Funktion för att läsa in profiler från registret till dropdown
+function Refresh-ProfileDropdown {
+    $Global:comboMiljöer.Items.Clear()
+    if (Test-Path $Global:RegPath) {
+        $SubKeys = Get-ChildItem -Path $Global:RegPath | Select-Object -ExpandProperty PSChildName
+        foreach ($Key in $SubKeys) {
+            [void]$Global:comboMiljöer.Items.Add($Key)
+        }
+    }
+    # Fallback om registret är helt tomt vid första start
+    if ($Global:comboMiljöer.Items.Count -eq 0) {
+        foreach ($Standard in @("Prod", "PreProd", "Test", "IT")) {
+            [void]$Global:comboMiljöer.Items.Add($Standard)
+        }
+    }
+    $Global:comboMiljöer.SelectedIndex = -1
+    $Global:comboMiljöer.Text = "-- Välj Miljöprofil --"
+}
+
+function Save-KrimsonSettings {
+    # 1. Hämta namnet på den aktiva profilen just nu
+    $AktivProfil = $Global:comboMiljöer.Text
+    if ([string]::IsNullOrWhiteSpace($AktivProfil) -or $AktivProfil -eq "-- Välj Miljöprofil --") { return }
+
+    # Säkra sökvägen i registret för profilen
+    $ProfilPath = "$($Global:RegPath)\$AktivProfil"
+    if (-not (Test-Path $ProfilPath)) { New-Item -Path $ProfilPath -Force | Out-Null }
+
+    # Loopa igenom matrisen och spara alla 15/17 profilfält om de existerar i minnet
+    if ($Global:MatrixTextBoxes) {
+        foreach ($Key in $Global:MatrixTextBoxes.Keys) {
+            if ($Global:MatrixTextBoxes[$Key] -and $Global:MatrixTextBoxes[$Key].IsDisposed -eq $false) {
+                Set-ItemProperty -Path $ProfilPath -Name $Key -Value $Global:MatrixTextBoxes[$Key].Text -Force
+            }
+        }
+    }
+
+    # 2. Spara de globala logginställningarna (om kontrollerna finns på skärmen just nu)
+    if ($Global:chkLogEnabled -and $Global:chkLogEnabled.IsDisposed -eq $false) {
+        if (-not (Test-Path $Global:GlobalRegPath)) { New-Item -Path $Global:GlobalRegPath -Force | Out-Null }
+        
+        $StatusString = $Global:chkLogEnabled.Checked.ToString()
+        Set-ItemProperty -Path $Global:GlobalRegPath -Name "LogEnabled" -Value $StatusString -Force
+        Set-ItemProperty -Path $Global:GlobalRegPath -Name "LogFilePath" -Value $Global:txtLogPath.Text -Force
+
+        # Uppdatera minnesvariablerna live
+        $Global:LogEnabled = $Global:chkLogEnabled.Checked
+        $Global:LogFilePath = $Global:txtLogPath.Text
+    }
+
+    Write-KrimsonLog "Autosave utfört: Inställningar för profilen '$AktivProfil' och global logg har sparats."
+}
 
 # Funktion för att hämta inställningar från registret
 function Get-KrimsonSettings {
@@ -445,9 +543,29 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     $pictureBoxLogo.Cursor = [System.Windows.Forms.Cursors]::Hand
 
     # Klick-händelse: Öppnar inställningarna direkt
-    $pictureBoxLogo.Add_Click({ Invoke-Screen -TargetFunction "Create-FormSettings" -TitleLeft "Konfiguration" -TitleRight "Miljöprofiler" })
+    $pictureBoxLogo.Add_Click({
+    
+    # Kontrollera direkt i minnet om panelSettings fysiskt ligger på arbetsytan
+    $IsSettingsOpen = $Global:panelChildForm.Controls.ContainsKey("panelSettings")
+    
+    if ($IsSettingsOpen -eq $true) {
+        # Om den finns öppen -> Töm arbetsytan direkt så den blir helt tom och ren till höger
+        $Global:panelChildForm.Controls.Clear()
+        
+        # Nollställ även titlarna i toppanelen så de försvinner
+        if ($Global:lblTitleLeft) { $Global:lblTitleLeft.Text = "" }
+        if ($Global:lblTitleRight) { $Global:lblTitleRight.Text = "" }
+        
+        $Global:formMain.Refresh()
+        Write-KrimsonLog "Stängde konfigurationsskärmen via logotypen."
+    }
+    else {
+        # Om den INTE finns på skärmen -> Öppna den omedelbart på det ABSOLUT FÖRSTA klicket!
+        Invoke-Screen -TargetFunction "Create-FormSettings" -TitleLeft "Konfiguration" -TitleRight "Miljöprofiler"
+    }
+})
 
-    $Global:formMain.Controls.Add($pictureBoxLogo)
+    $panelLeftContainer.Controls.Add($pictureBoxLogo)
     $pictureBoxLogo.BringToFront()
 
     # --- # 2. TOPPANEL (Mörkblå överkant) ---
@@ -487,6 +605,7 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     $Global:toolStripStatusLabelLeft = New-Object System.Windows.Forms.ToolStripStatusLabel
     $Global:toolStripStatusLabelLeft.Name = "toolStripStatusLabelLeft"
     $Global:toolStripStatusLabelLeft.Text = ""
+    $Global:toolStripStatusLabelLeft.Margin = New-Object System.Windows.Forms.Padding(0, 1, 0, 0)
 
     $statusStrip = New-Object System.Windows.Forms.StatusStrip
     $statusStrip.AutoSize = $False
@@ -496,36 +615,85 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     $statusStrip.GripStyle = [System.Windows.Forms.ToolStripGripStyle]::Hidden
     $statusStrip.Items.AddRange($Global:toolStripStatusLabelLeft)
     $statusStrip.Name = "statusStrip"
-    $statusStrip.Size = New-Object System.Drawing.Size(0, 24)
+    $statusStrip.Size = New-Object System.Drawing.Size(0, 28)
 
     # =========================================================================================
     # 4. MONTERING AV KONTROLLER (DEN DEFINITIVA ORIGINALORDNINGEN)
     # =========================================================================================
-    # 1. Montera sidomenyn FÖRST (Då går den hela vägen upp till taket till vänster!)
-    $Global:formMain.Controls.Add($panelLeftContainer)
-    $panelLeftContainer.Dock = [System.Windows.Forms.DockStyle]::Left
-    $panelLeftContainer.BringToFront()
+    
+    $Global:panelChildForm.Padding = New-Object System.Windows.Forms.Padding(0, 65, 0, 0)
 
-    # 2. Montera toppanelen NU (Då startar den till HÖGER om menyn och dockar perfekt!)
-    $Global:formMain.Controls.Add($panelTop)
+    # 1. Montera arbetsytan (Fill) ALLRA FÖRST. I WinForms innebär detta att den tar ytan som blir över 
+    # efter att de andra kontrollerna har mutat in sina kanter.
+    $Global:panelChildForm.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $Global:formMain.Controls.Add($Global:panelChildForm)
+    
+    # 2. Montera toppanelen (Top)
     $panelTop.Dock = [System.Windows.Forms.DockStyle]::Top
-
-    # 3. Montera statusraden i botten
+    $Global:formMain.Controls.Add($panelTop)
+    
+    # 3. Montera statusraden i botten (Bottom)
+    $statusStrip.Dock = [System.Windows.Forms.DockStyle]::Bottom
     $Global:formMain.Controls.Add($statusStrip)
-
-    # 4. Kör menylayouten så att den slimmade bredden räknas ut dynamiskt
+    
+    # 4. Montera sidomenyn (Left) ALLRA SIST. Då spärrar den vänsterkanten från tak till botten 
+    # och trycker undan både toppanelen, statusraden och arbetsytan till höger!
+    $panelLeftContainer.Dock = [System.Windows.Forms.DockStyle]::Left
+    $Global:formMain.Controls.Add($panelLeftContainer)
+    
+    # 5. Kör menylayouten så att den slimmade bredden räknas ut dynamiskt
     Build-DynamicMenu -ParentContainer $panelLeftContainer
     $pictureBoxLogo.BringToFront()
-
-    # 5. Montera högerpanelen (Arbetsytan) allra sist så den fyller ut resten under bannern
-    $Global:formMain.Controls.Add($Global:panelChildForm)
 
     # Tvinga fönstret att uppdatera grafiken
     $Global:formMain.Refresh()
 
+    # =========================================================================================
+    # HOVRINGSHÄNDELSER FÖR LOGOTYPEN (Placerade efter att statusraden har skapats)
+    # =========================================================================================
+    
+    $pictureBoxLogo.Add_MouseEnter({
+        if ($Global:toolStripStatusLabelLeft) {
+            $Global:toolStripStatusLabelLeft.Text = "Settings - Konfiguration och inställningar"
+            $Global:formMain.Refresh() # Tvingar hela fönstret att rita om sig och visa texten direkt
+        }
+    })
+
+    $pictureBoxLogo.Add_MouseLeave({
+        if ($Global:toolStripStatusLabelLeft) {
+            $Global:toolStripStatusLabelLeft.Text = ""
+            $Global:formMain.Refresh() # Tvingar fönstret att rensa bort texten direkt
+        }
+    })
+
+    # =========================================================================================
+    # DUBBELKLICK-TUNNEL FÖR LOGGVISAREN PÅ STATUSRADEN (SWITCH-FUNKTION)
+    # =========================================================================================
+    $statusStrip.Add_DoubleClick({
+        # Kontrollera om loggvisaren redan är öppen och synlig
+        $IsLogOpen = $Global:panelChildForm.Controls | Where-Object { $_.Name -eq "panelLogView" }
+        
+        if ($IsLogOpen) {
+            # Om den är öppen -> Töm och återställ till tomt rent läge
+            $Global:panelChildForm.Controls.Clear()
+            if ($Global:labelTitleLeft) { $Global:labelTitleLeft.Text = "" }
+            if ($Global:labelTitleRight) { $Global:labelTitleRight.Text = "" }
+            $Global:LogViewIsOpen = $false
+            $Global:formMain.Refresh()
+            Write-KrimsonLog "Stängde händelseloggen via statusraden."
+        }
+        else {
+            # Om den inte är öppen -> Kör Invoke-Screen för att rita ut loggvisaren
+            $Global:LogViewIsOpen = $true
+            Invoke-Screen -TargetFunction "Create-FormLogView" -TitleLeft "Händelselogg" -TitleRight "Systemhändelser"
+        }
+    })
+
+    # Skriv den första raden i loggen precis innan gränssnittet öppnas
+    Write-KrimsonLog "KrimsonTools GUI startades - Gränssnitt helt inläst."
+
     # Visa fönstret
     [System.Windows.Forms.Application]::Run($Global:formMain)
-
 }
 
 # =========================================================================================
@@ -533,10 +701,15 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
 # =========================================================================================
 
 function Create-FormSettings {
+    
+    $Global:MatrixTextBoxes = @{}
+
     # 1. HUVUDPANEL (Mörkt tema) samt hantering av miljöprofiler (Dropdown, +, -)
     $panelSettings = New-Object System.Windows.Forms.Panel
-    $panelSettings.Size = $Global:panelChildForm.Size
+    $panelSettings.Name = "panelSettings"
+    $panelSettings.AutoScroll = $true
     $panelSettings.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $panelSettings.AutoScrollMinSize = New-Object System.Drawing.Size(0, 950)
     $panelSettings.BackColor = [System.Drawing.Color]::FromArgb(31, 31, 43)
 
     $FontRubrik = New-Object System.Drawing.Font("Verdana", 10, [System.Drawing.FontStyle]::Bold)
@@ -553,45 +726,28 @@ function Create-FormSettings {
     $panelSettings.Controls.Add($lblVäljMiljö)
 
     $Global:comboMiljöer = New-Object System.Windows.Forms.ComboBox
-    $Global:comboMiljöer.Location = New-Object System.Drawing.Point(160, 21)
-    $Global:comboMiljöer.Size = New-Object System.Drawing.Size(180, 25)
-    $Global:comboMiljöer.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    $Global:comboMiljöer.Location = New-Object System.Drawing.Point(180, 21) # Ändrad från 160 till 180 för perfekt linjering
+    $Global:comboMiljöer.Size = New-Object System.Drawing.Size(250, 25) # Bredden anpassad så knapparna får plats efteråt
+    $Global:comboMiljöer.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDown # Ändrad från DropDownList så du kan SKRIVA ett nytt namn!
     $Global:comboMiljöer.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
     $Global:comboMiljöer.ForeColor = [System.Drawing.Color]::White
-    $Global:comboMiljöer.Font = $FontRubrik
+    $Global:comboMiljöer.Font = $FontFalt # Ändrad från $FontRubrik så höjden matchar fälten under
     $panelSettings.Controls.Add($Global:comboMiljöer)
 
-    # Funktion för att läsa in profiler från registret till dropdownen
-    function Refresh-ProfileDropdown {
-        $Global:comboMiljöer.Items.Clear()
-        if (Test-Path $Global:RegPath) {
-            $SubKeys = Get-ChildItem -Path $Global:RegPath | Select-Object -ExpandProperty PSChildName
-            foreach ($Key in $SubKeys) {
-                [void]$Global:comboMiljöer.Items.Add($Key)
-            }
-        }
-        # Fallback om registret är helt tomt vid första start
-        if ($Global:comboMiljöer.Items.Count -eq 0) {
-            foreach ($Standard in @("Prod", "PreProd", "Test", "IT")) {
-                [void]$Global:comboMiljöer.Items.Add($Standard)
-            }
-        }
-        if ($Global:comboMiljöer.Items.Count -gt 0) { $Global:comboMiljöer.SelectedIndex = 0 }
-    }
-
-    # PLUS-KNAPP (Skapa ny profil)
+    # # Plus-KNAPP (Skapa ny profil)
     $btnPlus = New-Object System.Windows.Forms.Button
     $btnPlus.Text = "+"
     $btnPlus.Font = New-Object System.Drawing.Font("Verdana", 12, [System.Drawing.FontStyle]::Bold)
+    $btnPlus.FlatStyle = [System.Windows.Forms.DockStyle]::None
     $btnPlus.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $btnPlus.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(255, 180, 0)
     $btnPlus.ForeColor = [System.Drawing.Color]::LightGreen
     $btnPlus.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
-    $btnPlus.Location = New-Object System.Drawing.Point(350, 20)
+    $btnPlus.Location = New-Object System.Drawing.Point(440, 21) # Justerad position
     $btnPlus.Size = New-Object System.Drawing.Size(35, 25)
     $panelSettings.Controls.Add($btnPlus)
 
-    # MINUS-KNAPP (Ta bort vald profil)
+    # # Minus-KNAPP (Ta bort vald profil)
     $btnMinus = New-Object System.Windows.Forms.Button
     $btnMinus.Text = "-"
     $btnMinus.Font = New-Object System.Drawing.Font("Verdana", 12, [System.Drawing.FontStyle]::Bold)
@@ -599,7 +755,7 @@ function Create-FormSettings {
     $btnMinus.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(255, 180, 0)
     $btnMinus.ForeColor = [System.Drawing.Color]::Red
     $btnMinus.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
-    $btnMinus.Location = New-Object System.Drawing.Point(390, 20)
+    $btnMinus.Location = New-Object System.Drawing.Point(480, 21) # Justerad position
     $btnMinus.Size = New-Object System.Drawing.Size(35, 25)
     $panelSettings.Controls.Add($btnMinus)
 
@@ -641,22 +797,26 @@ function Create-FormSettings {
     # 2. DEFINITION AV MATRISEN/TABELLEN FÖR SYSTEM OCH ROLLER
     $SystemMatris = @(
         @{ System = "SCSM";         Roll = "Server";    Desc = "SCSM Management Servrar" }
-        @{ System = "SCSM";         Roll = "SQLServer"; Desc = "SCSM SQL Server / Instans" }
-        @{ System = "SCSM";         Roll = "DBName";    Desc = "SCSM Databasnamn" }
-        @{ System = "Cireson";      Roll = "Server";    Desc = "Cireson Portal Webbservrar" }
-        @{ System = "Cireson";      Roll = "SQLServer"; Desc = "Cireson SQL Server" }
-        @{ System = "Cireson";      Roll = "DBName";    Desc = "Cireson Portal Databasnamn" }
-        @{ System = "DataWarehouse";Roll = "Server";    Desc = "SCSM DW Management Server" }
-        @{ System = "DataWarehouse";Roll = "SQLServer"; Desc = "SCSM DW SQL Server" }
-        @{ System = "DataWarehouse";Roll = "DBName";    Desc = "SCSM DW Repository Databasnamn" }
-        @{ System = "Orchestrator"; Roll = "Server";    Desc = "SCO Runbook Server / Web Service URL" }
-        @{ System = "Orchestrator"; Roll = "SQLServer"; Desc = "SCO SQL Server" }
-        @{ System = "Orchestrator"; Roll = "DBName";    Desc = "SCO Databasnamn" }
+        @{ System = "SCSM";         Roll = "SQL"; Desc = "SCSM SQL Server / Instans" }
+        @{ System = "SCSM";         Roll = "DB";    Desc = "SCSM Databasnamn" }
+        @{ System = "Cireson";      Roll = "Web";    Desc = "Cireson Portal Webbservrar" }
+        @{ System = "Cireson";      Roll = "SQL"; Desc = "Cireson SQL Server" }
+        @{ System = "Cireson";      Roll = "DB";    Desc = "Cireson Portal Databasnamn" }
+        @{ System = "Cireson";      Roll = "Cache";  Desc = "Cireson Cache Builder Server" }
+        @{ System = "Analytics";    Roll = "SQL";    Desc = "Cireson Analytics SQL Server" }
+        @{ System = "Analytics";    Roll = "DB";     Desc = "Cireson Analytics Databasnamn" }
+        @{ System = "DW";           Roll = "Server";    Desc = "DataWarehouse Management Server" }
+        @{ System = "DW";           Roll = "SQL"; Desc = "DataWarehouse SQL Server" }
+        @{ System = "DW";           Roll = "Repo DB"; Desc = "DataWarehouse Repository Databasnamn" }
+        @{ System = "DW";           Roll = "Stage DB";Desc = "DataWarehouse Staging and Config Databasnamn" }
+        @{ System = "DW";           Roll = "Mart DB"; Desc = "DataWarehouse DataMart Databasnamn" }
+        @{ System = "Orc";          Roll = "Server";    Desc = "Orchestrator Runbook Server / Web Service URL" }
+        @{ System = "Orc";          Roll = "SQL"; Desc = "Orchestrator SQL Server" }
+        @{ System = "Orc";          Roll = "DB";    Desc = "Orchestrator Databasnamn" }
     )
 
     # --- DYNAMISK GENERERING AV MATRISEN ---
     $CurrentTop = 85
-    $Global:MatrixTextBoxes = @{}
 
     foreach ($Rad in $SystemMatris) {
         # Skapa en unik identifierare (t.ex. SCSM_Server, SCSM_SQLServer...)
@@ -673,13 +833,15 @@ function Create-FormSettings {
 
         # Inmatningsbox (Mittenkolumnen - breddad för kommatecken)
         $txtFalt = New-Object System.Windows.Forms.TextBox
+        $txtFalt.Anchor = [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Top
         $txtFalt.Font = $FontFalt
         $txtFalt.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
         $txtFalt.ForeColor = [System.Drawing.Color]::White
         $txtFalt.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
         $txtFalt.Location = New-Object System.Drawing.Point(180, $CurrentTop)
-        $txtFalt.Size = New-Object System.Drawing.Size(350, 23)
+        $txtFalt.Size = New-Object System.Drawing.Size(340, 23)
         $panelSettings.Controls.Add($txtFalt)
+        $Global:MatrixTextBoxes[$KeyName] = $txtFalt
 
         # Förklarande hjälptext (Höger kolumn)
         $lblDesc = New-Object System.Windows.Forms.Label
@@ -687,20 +849,26 @@ function Create-FormSettings {
         $lblDesc.Font = $FontFalt
         $lblDesc.ForeColor = [System.Drawing.Color]::Gray
         $lblDesc.Location = New-Object System.Drawing.Point(540, ($CurrentTop + 3))
-        $lblDesc.Size = New-Object System.Drawing.Size(250, 20)
+        $lblDesc.Size = New-Object System.Drawing.Size(400, 20)
+        $lblDesc.Anchor = [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Top
         $panelSettings.Controls.Add($lblDesc)
-
-        # Spara referens till textrutan globalt så vi kan läsa/skriva till den
-        $Global:MatrixTextBoxes[$KeyName] = $txtFalt
 
         $CurrentTop += 28
     }
 
     # --- HÄNDELSEHANTERING FÖR DROPDOWN (LÄS FRÅN REGISTRET) ---
     $Global:comboMiljöer.Add_SelectedIndexChanged({
-        $ValdProfil = $Global:comboMiljöer.SelectedItem
-        if ($ValdProfil) {
-            $Path = "$($Global:RegPath)\$ValdProfil"
+    $ValdProfil = $Global:comboMiljöer.SelectedItem
+
+    # SPÄRR: Gör absolut ingenting om starttexten är aktiv eller om valet är tomt!
+    if ([string]::IsNullOrWhiteSpace($ValdProfil) -or $ValdProfil -eq "-- Välj Miljöprofil --") { 
+        return 
+    }
+
+    # Kör autosave för den förra profilen, och läs sedan in den nya!
+    Save-KrimsonSettings
+
+    $Path = "$($Global:RegPath)\$ValdProfil"
             
             # Töm alla fält först ifall profilen är ny eller saknar värden
             foreach ($Key in $Global:MatrixTextBoxes.Keys) {
@@ -716,40 +884,91 @@ function Create-FormSettings {
                     }
                 }
             }
-        }
     })
 
-    # --- GLOBAL SPARA-KNAPP ---
-    $btnSave = New-Object System.Windows.Forms.Button
-    $btnSave.Text = "Spara Profilinställningar"
-    $btnSave.Font = $FontRubrik
-    $btnSave.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $btnSave.FlatAppearance.BorderSize = 1
-    $btnSave.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(255, 180, 0)
-    $btnSave.ForeColor = [System.Drawing.Color]::White
-    $btnSave.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
-    $btnSave.Location = New-Object System.Drawing.Point(180, ($CurrentTop + 15))
-    $btnSave.Size = New-Object System.Drawing.Size(220, 35)
+    # =========================================================================================
+    # GLOBAL LOGGNINGS-PANEL (PLACERAS OVANFÖR SPARA-KNAPPEN)
+    # =========================================================================================
+    $lblLogSection = New-Object System.Windows.Forms.Label
+    $lblLogSection.Text = "Global Loggningsfunktion (Gäller alla profiler)"
+    $lblLogSection.Font = New-Object System.Drawing.Font("Verdana", 9, [System.Drawing.FontStyle]::Bold)
+    $lblLogSection.ForeColor = [System.Drawing.Color]::FromArgb(255, 180, 0) # Orange
+    $lblLogSection.Location = New-Object System.Drawing.Point(30, ($CurrentTop + 15))
+    $lblLogSection.Size = New-Object System.Drawing.Size(400, 20)
+    $panelSettings.Controls.Add($lblLogSection)
 
-    $btnSave.Add_Click({
-        $ValdProfil = $Global:comboMiljöer.SelectedItem
-        if (-not $ValdProfil) { return }
+    # Kryssruta för att aktivera loggning
+    $Global:chkLogEnabled = New-Object System.Windows.Forms.CheckBox
+    $Global:chkLogEnabled.Text = "Aktivera händelseloggning till fil"
+    $Global:chkLogEnabled.Font = $FontFalt
+    $Global:chkLogEnabled.ForeColor = [System.Drawing.Color]::White
+    $Global:chkLogEnabled.Location = New-Object System.Drawing.Point(180, ($CurrentTop + 40))
+    $Global:chkLogEnabled.Size = New-Object System.Drawing.Size(300, 20)
+    $Global:chkLogEnabled.Checked = $Global:LogEnabled
+    $panelSettings.Controls.Add($Global:chkLogEnabled)
 
-        $Path = "$($Global:RegPath)\$ValdProfil"
-        if (-not (Test-Path $Path)) {
-            New-Item -Path $Path -Force | Out-Null
-        }
+    # Etikett för loggsökväg
+    $lblLogPath = New-Object System.Windows.Forms.Label
+    $lblLogPath.Text = "Sökväg Loggfil"
+    $lblLogPath.Font = $FontEtikett
+    $lblLogPath.ForeColor = [System.Drawing.Color]::White
+    $lblLogPath.Location = New-Object System.Drawing.Point(30, ($CurrentTop + 70))
+    $lblLogPath.Size = New-Object System.Drawing.Size(140, 20)
+    $panelSettings.Controls.Add($lblLogPath)
 
-        # Loopa igenom matrisen och skriv alla 12 värden till den valda profilens regnyckel
-        foreach ($Key in $Global:MatrixTextBoxes.Keys) {
-            Set-ItemProperty -Path $Path -Name $Key -Value $Global:MatrixTextBoxes[$Key].Text -Force
-        }
+    # Textruta för loggsökväg
+    $Global:txtLogPath = New-Object System.Windows.Forms.TextBox
+    $Global:txtLogPath.Font = $FontFalt
+    $Global:txtLogPath.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
+    $Global:txtLogPath.ForeColor = [System.Drawing.Color]::White
+    $Global:txtLogPath.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    $Global:txtLogPath.Location = New-Object System.Drawing.Point(180, ($CurrentTop + 67))
+    $Global:txtLogPath.Size = New-Object System.Drawing.Size(340, 23)
+    $Global:txtLogPath.Text = $Global:LogFilePath
+    $Global:txtLogPath.Anchor = [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Top
+    $panelSettings.Controls.Add($Global:txtLogPath)
 
-        [System.Windows.Forms.MessageBox]::Show("Inställningarna för profilen '$ValdProfil' har sparats i registret!", "Konfiguration sparad", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-    })
-    $panelSettings.Controls.Add($btnSave)
-    $panelTop.BringToFront()
     $Global:panelChildForm.Controls.Add($panelSettings)
+
+    # Fyll dropdown-listan från registret direkt vid start
+    Refresh-ProfileDropdown
+    
+    # Tvinga textrutorna att läsa in värdena för den profil som automatiskt valdes i dropdownen
+    $Global:comboMiljöer.SelectedIndex = 0
+
+}
+
+function Create-FormLogView {
+    Write-KrimsonLog "Öppnar intern händelselogg..."
+
+    $panelLogView = New-Object System.Windows.Forms.Panel
+    $panelLogView.Name = "panelLogView"
+    $panelLogView.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $panelLogView.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
+
+    # Stor, låst textruta för loggen
+    $Global:txtLogView = New-Object System.Windows.Forms.TextBox
+    $Global:txtLogView.Multiline = $true
+    $Global:txtLogView.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
+    $Global:txtLogView.Font = New-Object System.Drawing.Font("Consolas", 9.5)
+    $Global:txtLogView.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 22)
+    $Global:txtLogView.ForeColor = [System.Drawing.Color]::LightGray
+    $Global:txtLogView.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+    $Global:txtLogView.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $Global:txtLogView.ReadOnly = $true
+
+    # Hämta allt som sparats i vår StringBuilder-buffer under sessionen
+    if ($Global:LogBuffer) {
+        $Global:txtLogView.Text = $Global:LogBuffer.ToString()
+    }
+    
+    # Skrolla automatiskt ner till sista loggraden
+    $Global:txtLogView.SelectionStart = $Global:txtLogView.Text.Length
+    $Global:txtLogView.ScrollToCaret()
+
+    $panelLogView.Controls.Add($Global:txtLogView)
+    $Global:panelChildForm.Controls.Add($panelLogView)
+    $panelLogView.BringToFront()
 }
 
 function Create-FormForberedelseSteg1 {

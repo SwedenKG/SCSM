@@ -188,8 +188,8 @@ function Build-DynamicMenu {
     # Mät texten på alla huvud- och undermenyer
     foreach ($Item in $Global:MenuConfig) {
         $Font = New-Object System.Drawing.Font("Verdana", 14)
-        $BreddHuvud = [System.Windows.Forms.TextRenderer]::MeasureText($Item.MainMenu, $Font).Width + 40
-        $BreddUnder = [System.Windows.Forms.TextRenderer]::MeasureText($Item.SubMenu, $Font).Width + 60
+        $BreddHuvud = [System.Windows.Forms.TextRenderer]::MeasureText($Item.MainMenu, $Font).Width + 20
+        $BreddUnder = [System.Windows.Forms.TextRenderer]::MeasureText($Item.SubMenu, $Font).Width + 30
         
         if ($BreddHuvud -gt $OptimalBredd) { $OptimalBredd = $BreddHuvud }
         if ($BreddUnder -gt $OptimalBredd) { $OptimalBredd = $BreddUnder }
@@ -447,12 +447,12 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     # Klick-händelse: Öppnar inställningarna direkt
     $pictureBoxLogo.Add_Click({ Invoke-Screen -TargetFunction "Create-FormSettings" -TitleLeft "Konfiguration" -TitleRight "Miljöprofiler" })
 
-    $panelLeftContainer.Controls.Add($pictureBoxLogo)
+    $Global:formMain.Controls.Add($pictureBoxLogo)
+    $pictureBoxLogo.BringToFront()
 
     # --- # 2. TOPPANEL (Mörkblå överkant) ---
     $panelTop = New-Object System.Windows.Forms.Panel
     $panelTop.Height = 60
-    $panelTop.Padding = New-Object System.Windows.Forms.Padding($panelLeftContainer.Width, 0, 0, 0)
     $panelTop.Dock = [System.Windows.Forms.DockStyle]::Top
     $panelTop.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105) # Din mörkblå färg
 
@@ -499,31 +499,25 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     $statusStrip.Size = New-Object System.Drawing.Size(0, 24)
 
     # =========================================================================================
-    # 4. MONTERING AV KONTROLLER (HÄR STYRS ORDNINGEN SÅ ATT MENYN GÅR HELA VÄGEN NER)
+    # 4. MONTERING AV KONTROLLER (DEN DEFINITIVA ORIGINALORDNINGEN)
     # =========================================================================================
-    # 1. Lägg till och docka sidomenyn absolut FÖRST (hela vänsterkanten från topp till botten)
+    # 1. Montera sidomenyn FÖRST (Då går den hela vägen upp till taket till vänster!)
     $Global:formMain.Controls.Add($panelLeftContainer)
     $panelLeftContainer.Dock = [System.Windows.Forms.DockStyle]::Left
+    $panelLeftContainer.BringToFront()
 
-    # 2. Lägg till toppanelen i huvudfönstret (Då börjar den till höger om menyn och dockar perfekt!)
+    # 2. Montera toppanelen NU (Då startar den till HÖGER om menyn och dockar perfekt!)
     $Global:formMain.Controls.Add($panelTop)
     $panelTop.Dock = [System.Windows.Forms.DockStyle]::Top
 
-    # 3. Lägg till statusraden i botten
+    # 3. Montera statusraden i botten
     $Global:formMain.Controls.Add($statusStrip)
 
-    # 4. Kör den dynamiska menyn så att bredden räknas ut
+    # 4. Kör menylayouten så att den slimmade bredden räknas ut dynamiskt
     Build-DynamicMenu -ParentContainer $panelLeftContainer
+    $pictureBoxLogo.BringToFront()
 
-    # Tvinga sidomenyn att äga hela vänsterkanten från topp till botten
-    $Global:formMain.Controls.SetChildIndex($panelLeftContainer, 0)
-    
-    # Tvinga topp-bannern att lägga sig till höger om menyn
-    $Global:formMain.Controls.SetChildIndex($panelTop, 1)
-
-    # 5. Lägg till högerpanelen (Arbetsytan) ALLRA SIST
-    # Eftersom sidomenyn tagit vänstern och toppanelen tagit toppen, 
-    # kommer denna automatiskt fylla ut resterande utrymme under rubrikraden!
+    # 5. Montera högerpanelen (Arbetsytan) allra sist så den fyller ut resten under bannern
     $Global:formMain.Controls.Add($Global:panelChildForm)
 
     # Tvinga fönstret att uppdatera grafiken
@@ -754,6 +748,7 @@ function Create-FormSettings {
         [System.Windows.Forms.MessageBox]::Show("Inställningarna för profilen '$ValdProfil' har sparats i registret!", "Konfiguration sparad", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
     })
     $panelSettings.Controls.Add($btnSave)
+    $panelTop.BringToFront()
     $Global:panelChildForm.Controls.Add($panelSettings)
 }
 

@@ -148,23 +148,61 @@ function Invoke-Screen {
         [string]$TitleRight = ""
     )
 
-    # Nollställ inställningsflaggan så fort vi laddar en vanlig skärm
+    # #1. SPARA INSTÄLLNINGARNA FÖRST (om användaren lämnar inställningsvyn)
+    Save-KrimsonSettings
     $Global:SettingsIsOpen = $false
 
-    # 1. Rensa och frigör minnet från alla gamla kontroller så att inte ISE hänger sig
-    if ($Global:panelChildForm) {
-        while ($Global:panelChildForm.Controls.Count -gt 0) {
-            $OldControl = $Global:panelChildForm.Controls[0]
-            $Global:panelChildForm.Controls.Remove($OldControl)
-            $OldControl.Dispose()
+    # --- SKOTTSÄKER HISTORIKLOGIK (Kom ihåg exakt vad som visas på skärmen) ---
+    if ($TargetFunction -eq "Create-FormLogView") {
+        $NuvarandeVy = ""
+        $HittadTitleLeft = $Global:labelPanelTopLeft.Text
+        $HittadTitleRight = $Global:labelPanelTopRight.Text
+
+        # Kontrollera vilken panel som faktiskt ligger på skärmen just nu
+        if ($Global:panelChildForm.Controls.ContainsKey("panelSettings")) { 
+            $NuvarandeVy = "Create-FormSettings" 
+            if ([string]::IsNullOrWhiteSpace($HittadTitleLeft)) { $HittadTitleLeft = "Tools" }
+            if ([string]::IsNullOrWhiteSpace($HittadTitleRight)) { $HittadTitleRight = "Configuration" }
+        }
+        elseif ($Global:panelChildForm.Controls.ContainsKey("panelArenden")) { 
+            $NuvarandeVy = "Create-FormArenden" 
+            if ([string]::IsNullOrWhiteSpace($HittadTitleLeft)) { $HittadTitleLeft = "Daily" }
+            if ([string]::IsNullOrWhiteSpace($HittadTitleRight)) { $HittadTitleRight = "Ärenden" }
+        }
+        
+        # Fallback om ingen specifik panel hittades men vi har en sparad funktion sedan tidigare
+        if ([string]::IsNullOrWhiteSpace($NuvarandeVy)) { $NuvarandeVy = $Global:CurrentActiveScreenFunction }
+
+        # Spara historiken så länge vi inte redan står i loggen
+        if ($HittadTitleLeft -ne "Händelselogg" -and -not [string]::IsNullOrWhiteSpace($NuvarandeVy)) {
+            $Global:PreviousActiveScreen = @{
+                Function   = $NuvarandeVy
+                TitleLeft  = $HittadTitleLeft
+                TitleRight = $HittadTitleRight
+            }
+            write-KrimsonLog "Historik sparad för återgång till: $NuvarandeVy ($HittadTitleLeft - $HittadTitleRight)"
+        }
+    } else {
+        # Om vi laddar en vanlig skärm (inklusive Settings), kom ihåg den funktionen till nästa gång
+        if ($TargetFunction -ne "Create-FormLogView") {
+            $Global:CurrentActiveScreenFunction = $TargetFunction
         }
     }
 
-    # 2. Uppdatera rubriktexterna högst upp i gränssnittet
-    if ($Global:labelPanelTopLeft)  { $Global:labelPanelTopLeft.Text = $TitleLeft }
+    # #2. Rensa och frigör minnet från alla gamla kontroller så att inte ISE hänger sig
+    if ($Global:panelChildForm) {
+        while ($Global:panelChildForm.Controls.Count -gt 0) {
+            $oldControl = $Global:panelChildForm.Controls[0]
+            $Global:panelChildForm.Controls.Remove($oldControl)
+            $oldControl.Dispose()
+        }
+    }
+
+    # #3. Uppdatera rubriktexterna högst upp i gränssnittet
+    if ($Global:labelPanelTopLeft) { $Global:labelPanelTopLeft.Text = $TitleLeft }
     if ($Global:labelPanelTopRight) { $Global:labelPanelTopRight.Text = $TitleRight }
 
-    # 3. Anropa funktionen dynamiskt baserat på namnet i strängen (t.ex. 'Create-FormArenden')
+    # #4. Anropa funktionen dynamiskt baserat på namnet i strängen (t.ex. 'Create-FormArenden')
     if (Get-Command $TargetFunction -ErrorAction SilentlyContinue) {
         Write-Host "[*] Laddar vy: $TargetFunction" -ForegroundColor Green
         & $TargetFunction
@@ -361,12 +399,9 @@ function Refresh-MenuLayout {
 }
 
 # =========================================================================================
-# ZON 4: REGISTERHANTERING, INSTÄLLNINGAR OCH HUVUDFÖNSTER (WinForms)
+# ZON 4: REGISTERHANTERING, LOGGNINGSFUNKTION, INSTÄLLNINGAR OCH HUVUDFÖNSTER (WinForms)
 # =========================================================================================
 
-# =========================================================================================
-# GLOBAL LOGGNINGSFUNKTION (ZON 4)
-# =========================================================================================
 $Global:GlobalRegPath = "HKCU:\Software\KrimsonTools\Settings\Global"
 $Global:LogBuffer = New-Object "System.Text.StringBuilder"
 
@@ -375,34 +410,39 @@ $Global:LogEnabled = $false
 $Global:LogFilePath = Join-Path $PSScriptRoot "KrimsonTools_Log.txt"
 
 if (Test-Path $Global:GlobalRegPath) {
-    $RegLogEnabled = Get-ItemProperty -Path $Global:GlobalRegPath -Name "LogEnabled" -ErrorAction SilentlyContinue
-    if ($RegLogEnabled) { $Global:LogEnabled = [System.Convert]::ToBoolean($RegLogEnabled.LogEnabled) }
-    
-    $RegLogPath = Get-ItemProperty -Path $Global:GlobalRegPath -Name "LogFilePath" -ErrorAction SilentlyContinue
-    if ($RegLogPath) { $Global:LogFilePath = $RegLogPath.LogFilePath }
+    $RegLog = Get-ItemProperty -Path $Global:GlobalRegPath -ErrorAction SilentlyContinue
+    if ($null -ne $RegLog) {
+        if ($RegLog.LogEnabled) { $Global:LogEnabled = [System.Convert]::ToBoolean($RegLog.LogEnabled) }
+        if ($RegLog.LogFilePath) { $Global:LogFilePath = $RegLog.LogFilePath }
+    }
 }
 
-function Write-KrimsonLog {
+function write-KrimsonLog {
     param (
         [string]$Message
     )
-    # Skapa tidsstämpel: [2026-10-22 16:00:05]
-    $TimeStamp = [DateTime]::Now.ToString("yyyy-MM-dd HH:mm:ss")
-    $LogLine = "[$TimeStamp] $Message"
-    
+
+    # FIX: Stora MM för månad, små mm för minuter
+    $timeStamp = [DateTime]::Now.ToString("yyyy-MM-dd HH:mm:ss")
+    $LogLine = "[$timeStamp] $Message"
+
     # Skriv till internminnes-buffer (så att loggvisaren kan läsa den blixtsnabbt)
     [void]$Global:LogBuffer.AppendLine($LogLine)
-    
+
     # Om loggvisaren är öppen live just nu, uppdatera dess textruta direkt
     if ($Global:txtLogView -and $Global:txtLogView.IsDisposed -eq $false) {
         $Global:txtLogView.AppendText($LogLine + [Environment]::NewLine)
     }
-    
-    # Om loggning är aktiverad till fil, skriv direkt till textfilen
-    if ($Global:LogEnabled -eq $true) {
+
+    # FIX: Om loggning är aktiverad till fil, kontrollera och skapa mappen om den saknas, skriv sedan säkert med Add-Content
+    if ($Global:LogEnabled -eq $true -and -not [string]::IsNullOrWhiteSpace($Global:LogFilePath)) {
         try {
-            $LogLine | Out-File -FilePath $Global:LogFilePath -Append -Encoding utf8 -ErrorAction SilentlyContinue
-        } catch {}
+            $LogMapp = Split-Path -Path $Global:LogFilePath
+            if (-not (Test-Path $LogMapp)) { New-Item -ItemType Directory -Path $LogMapp -Force | Out-Null }
+            Add-Content -Path $Global:LogFilePath -Value $LogLine -Encoding Utf8 -ErrorAction SilentlyContinue
+        } catch {
+            # Svälj eventuella skrivfel så att inte hela verktyget låser sig vid rättighetsproblem
+        }
     }
 }
 
@@ -430,50 +470,58 @@ function Refresh-ProfileDropdown {
 
 function Save-KrimsonSettings {
     # 1. Hämta namnet på den aktiva profilen just nu
-    $AktivProfil = $Global:comboMiljöer.Text
+    $AktivProfil = $Global:CurrentActiveProfileOnScreen
     if ([string]::IsNullOrWhiteSpace($AktivProfil) -or $AktivProfil -eq "-- Välj Miljöprofil --") { return }
+
+    # SÄKERHETSSPÄRR: Om textrutorna inte finns eller är stängda, AVBRYT direkt så vi inte raderar registret!
+    if (-not $Global:MatrixTextBoxes -or $Global:MatrixTextBoxes.Count -eq 0) { return }
+    
+    # Kontrollera om den första rutan är borttagen ur minnet
+    $FirstKey = ($Global:MatrixTextBoxes.Keys | Select-Object -First 1)
+    if ($Global:MatrixTextBoxes[$FirstKey].IsDisposed) { return }
 
     # Säkra sökvägen i registret för profilen
     $ProfilPath = "$($Global:RegPath)\$AktivProfil"
     if (-not (Test-Path $ProfilPath)) { New-Item -Path $ProfilPath -Force | Out-Null }
 
-    # Loopa igenom matrisen och spara alla 15/17 profilfält om de existerar i minnet
-    if ($Global:MatrixTextBoxes) {
-        foreach ($Key in $Global:MatrixTextBoxes.Keys) {
-            if ($Global:MatrixTextBoxes[$Key] -and $Global:MatrixTextBoxes[$Key].IsDisposed -eq $false) {
-                Set-ItemProperty -Path $ProfilPath -Name $Key -Value $Global:MatrixTextBoxes[$Key].Text -Force
-            }
+    # Loopa igenom matrisen och spara alla profilfält
+    foreach ($Key in $Global:MatrixTextBoxes.Keys) {
+        if ($Global:MatrixTextBoxes[$Key] -and $Global:MatrixTextBoxes[$Key].IsDisposed -eq $false) {
+            Set-ItemProperty -Path $ProfilPath -Name $Key -Value $Global:MatrixTextBoxes[$Key].Text -Force
         }
     }
 
-    # 2. Spara de globala logginställningarna (om kontrollerna finns på skärmen just nu)
+    # #2. Spara de globala logginställningarna (om kontrollerna finns på skärmen)
     if ($Global:chkLogEnabled -and $Global:chkLogEnabled.IsDisposed -eq $false) {
         if (-not (Test-Path $Global:GlobalRegPath)) { New-Item -Path $Global:GlobalRegPath -Force | Out-Null }
         
         $StatusString = $Global:chkLogEnabled.Checked.ToString()
         Set-ItemProperty -Path $Global:GlobalRegPath -Name "LogEnabled" -Value $StatusString -Force
-        Set-ItemProperty -Path $Global:GlobalRegPath -Name "LogFilePath" -Value $Global:txtLogPath.Text -Force
+        Set-ItemProperty -Path $Global:GlobalRegPath -Name "LogFilePath" -Value $Global:txtLogFilePath.Text -Force
 
         # Uppdatera minnesvariablerna live
         $Global:LogEnabled = $Global:chkLogEnabled.Checked
-        $Global:LogFilePath = $Global:txtLogPath.Text
+        $Global:LogFilePath = $Global:txtLogFilePath.Text
     }
 
-    Write-KrimsonLog "Autosave utfört: Inställningar för profilen '$AktivProfil' och global logg har sparats."
+    Write-KrimsonLog "Autosave utfört: Inställningar för profilen '$AktivProfil' har sparats säkert."
 }
 
 # Funktion för att hämta inställningar från registret
 function Get-KrimsonSettings {
-    if (-not (Test-Path $Global:RegPath)) {
-        New-Item -Path $Global:RegPath -Force | Out-Null
+    if (Test-Path $Global:GlobalRegPath) {
+        $RegLog = Get-ItemProperty -Path $Global:GlobalRegPath -ErrorAction SilentlyContinue
+        if ($null -ne $RegLog) {
+            if ($RegLog.LogEnabled) { $Global:LogEnabled = [System.Convert]::ToBoolean($RegLog.LogEnabled) }
+            if ($RegLog.LogFilePath) { $Global:LogFilePath = $RegLog.LogFilePath }
+        }
     }
 }
 
-# Funktion för att spara inställningar till registret
-
-
 # HUVUDFÖNSTER (Skapar själva grundskalet)
 function Create-FormMain {
+    
+    $Global:PreviousActiveScreen = ""
 
     # Läs miljöval från registret direkt vid start
     Get-KrimsonSettings
@@ -548,16 +596,20 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     # Kontrollera direkt i minnet om panelSettings fysiskt ligger på arbetsytan
     $IsSettingsOpen = $Global:panelChildForm.Controls.ContainsKey("panelSettings")
     
-    if ($IsSettingsOpen -eq $true) {
+    if ($isSettingsOpen -eq $true) {
+        # 1. SPARA AKTIV PROFIL FÖRST (Medan textrutorna fortfarande existerar på skärmen)
+        Save-KrimsonSettings
+        $Global:CurrentActiveProfileOnScreen = ""
+
         # Om den finns öppen -> Töm arbetsytan direkt så den blir helt tom och ren till höger
         $Global:panelChildForm.Controls.Clear()
-        
+
         # Nollställ även titlarna i toppanelen så de försvinner
         if ($Global:lblTitleLeft) { $Global:lblTitleLeft.Text = "" }
         if ($Global:lblTitleRight) { $Global:lblTitleRight.Text = "" }
-        
+
         $Global:formMain.Refresh()
-        Write-KrimsonLog "Stängde konfigurationsskärmen via logotypen."
+        write-KrimsonLog "Stängde konfigurationsskärmen via logotypen och sparade ändringar."
     }
     else {
         # Om den INTE finns på skärmen -> Öppna den omedelbart på det ABSOLUT FÖRSTA klicket!
@@ -641,7 +693,36 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     $panelLeftContainer.Dock = [System.Windows.Forms.DockStyle]::Left
     $Global:formMain.Controls.Add($panelLeftContainer)
     
-    # 5. Kör menylayouten så att den slimmade bredden räknas ut dynamiskt
+    # --- NY SÄKER LOGG-KNAPP ---
+    $btnShowLog = New-Object System.Windows.Forms.Button
+    $btnShowLog.Text = "📜 Visa Systemlogg"
+    $btnShowLog.Font = New-Object System.Drawing.Font("Verdana", 9, [System.Drawing.FontStyle]::Bold)
+    $btnShowLog.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105) # Matchar din mörkblå menyfärg
+    $btnShowLog.ForeColor = [System.Drawing.Color]::White
+    $btnShowLog.Dock = [System.Windows.Forms.DockStyle]::Bottom # Lägger den absolut längst ner i sidomenyn
+    $btnShowLog.Height = 40
+    $btnShowLog.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnShowLog.FlatAppearance.BorderSize = 0
+    $btnShowLog.Cursor = [System.Windows.Forms.Cursors]::Hand
+
+    $btnShowLog.Add_Click({
+        Toggle-KrimsonLogView
+    })
+
+    $panelLeftContainer.Controls.Add($btnShowLog)
+
+    # --- AUTOMATISKT FUSK: Låt statusraden klicka på knappen åt dig vid DUBBELKLICK ---
+    $statusStrip.DoubleClickEnabled = $true
+    $Global:toolStripStatusLabelLeft.DoubleClickEnabled = $true
+
+    $statusStrip.Add_DoubleClick({
+        $btnShowLog.PerformClick()
+    })
+    $Global:toolStripStatusLabelLeft.Add_DoubleClick({
+        $btnShowLog.PerformClick()
+    })
+
+    # # 5. Kör menylayouten så att den slimmade bredden räknas ut dynamiskt
     Build-DynamicMenu -ParentContainer $panelLeftContainer
     $pictureBoxLogo.BringToFront()
 
@@ -662,38 +743,36 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     $pictureBoxLogo.Add_MouseLeave({
         if ($Global:toolStripStatusLabelLeft) {
             $Global:toolStripStatusLabelLeft.Text = ""
-            $Global:formMain.Refresh() # Tvingar fönstret att rensa bort texten direkt
-        }
-    })
+        $Global:formMain.Refresh() # Tvingar fönstret att rensa bort texten direkt
+    }
+})
+    [void]$Global:formMain.ShowDialog()
+}
 
-    # =========================================================================================
-    # DUBBELKLICK-TUNNEL FÖR LOGGVISAREN PÅ STATUSRADEN (SWITCH-FUNKTION)
-    # =========================================================================================
-    $statusStrip.Add_DoubleClick({
-        # Kontrollera om loggvisaren redan är öppen och synlig
-        $IsLogOpen = $Global:panelChildForm.Controls | Where-Object { $_.Name -eq "panelLogView" }
-        
-        if ($IsLogOpen) {
-            # Om den är öppen -> Töm och återställ till tomt rent läge
+function Toggle-KrimsonLogView {
+
+    # Kontrollera om loggvisaren redan är öppen och synlig
+    $isLogOpen = $Global:panelChildForm.Controls.ContainsKey("panelLogView")
+
+    if ($isLogOpen) {
+        # 1. LOGGEN ÄR ÖPPEN -> ÅTERVÄND AUTOMATISKT DÄR VI VAR INNAN
+                if ($null -ne $Global:PreviousActiveScreen -and -not [string]::IsNullOrWhiteSpace($Global:PreviousActiveScreen.Function)) {
+            Invoke-Screen -TargetFunction $Global:PreviousActiveScreen.Function `
+                          -TitleLeft $Global:PreviousActiveScreen.TitleLeft `
+                          -TitleRight $Global:PreviousActiveScreen.TitleRight
+            Write-KrimsonLog "Stängde loggen och återvände automatiskt till: $($Global:PreviousActiveScreen.TitleLeft)"
+        } else {
+            # Om ingen historik finns (t.ex. vid uppstart), rensa bara skärmen till tomt rent läge
             $Global:panelChildForm.Controls.Clear()
-            if ($Global:labelTitleLeft) { $Global:labelTitleLeft.Text = "" }
-            if ($Global:labelTitleRight) { $Global:labelTitleRight.Text = "" }
+            if ($Global:lblTitleLeft) { $Global:lblTitleLeft.Text = "" }
+            if ($Global:lblTitleRight) { $Global:lblTitleRight.Text = "" }
             $Global:LogViewIsOpen = $false
             $Global:formMain.Refresh()
-            Write-KrimsonLog "Stängde händelseloggen via statusraden."
         }
-        else {
-            # Om den inte är öppen -> Kör Invoke-Screen för att rita ut loggvisaren
-            $Global:LogViewIsOpen = $true
-            Invoke-Screen -TargetFunction "Create-FormLogView" -TitleLeft "Händelselogg" -TitleRight "Systemhändelser"
-        }
-    })
+}
 
     # Skriv den första raden i loggen precis innan gränssnittet öppnas
     Write-KrimsonLog "KrimsonTools GUI startades - Gränssnitt helt inläst."
-
-    # Visa fönstret
-    [System.Windows.Forms.Application]::Run($Global:formMain)
 }
 
 # =========================================================================================
@@ -702,6 +781,8 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
 
 function Create-FormSettings {
     
+    # Skapa en minnesvariabel som kommer ihåg vilken profil som är öppen på skärmen JUST NU
+    $Global:CurrentActiveProfileOnScreen = ""
     $Global:MatrixTextBoxes = @{}
 
     # 1. HUVUDPANEL (Mörkt tema) samt hantering av miljöprofiler (Dropdown, +, -)
@@ -856,35 +937,45 @@ function Create-FormSettings {
         $CurrentTop += 28
     }
 
-    # --- HÄNDELSEHANTERING FÖR DROPDOWN (LÄS FRÅN REGISTRET) ---
-    $Global:comboMiljöer.Add_SelectedIndexChanged({
-    $ValdProfil = $Global:comboMiljöer.SelectedItem
+# --- HÄNDELSEHANTERING FÖR DROPDOWN (LÄS FRÅN REGISTRET) ---
+$Global:comboMiljöer.Add_SelectedIndexChanged({
+    $NyProfil = $Global:comboMiljöer.SelectedItem
+    if ([string]::IsNullOrWhiteSpace($NyProfil) -or $NyProfil -eq "-- Välj Miljöprofil --") { return }
 
-    # SPÄRR: Gör absolut ingenting om starttexten är aktiv eller om valet är tomt!
-    if ([string]::IsNullOrWhiteSpace($ValdProfil) -or $ValdProfil -eq "-- Välj Miljöprofil --") { 
-        return 
+    # 1. KÖR AUTOSAVE PÅ DEN GAMLA PROFILEN FÖRST (Om det fanns en profil öppen på skärmen)
+    if (-not [string]::IsNullOrWhiteSpace($Global:CurrentActiveProfileOnScreen) -and $Global:CurrentActiveProfileOnScreen -ne "-- Välj Miljöprofil --") {
+        # Säkra sökvägen till den GAMLA profilen i registret innan vi rör textrutorna
+        $GamlaProfilPath = "$($Global:RegPath)\$Global:CurrentActiveProfileOnScreen"
+        if (-not (Test-Path $GamlaProfilPath)) { New-Item -Path $GamlaProfilPath -Force | Out-Null }
+
+        # Spara innehållet från skärmen till den GAMLA profilen
+        foreach ($Key in $Global:MatrixTextBoxes.Keys) {
+            if ($Global:MatrixTextBoxes[$Key] -and $Global:MatrixTextBoxes[$Key].IsDisposed -eq $false) {
+                Set-ItemProperty -Path $GamlaProfilPath -Name $Key -Value $Global:MatrixTextBoxes[$Key].Text -Force
+            }
+        }
+        Write-KrimsonLog "Autosave utfört: Sparade den lämnade profilen '$Global:CurrentActiveProfileOnScreen' i registret."
     }
 
-    # Kör autosave för den förra profilen, och läs sedan in den nya!
-    Save-KrimsonSettings
+    # 2. UPPDATERA MINNESVARIABELN TILL DEN NYA PROFILEN
+    $Global:CurrentActiveProfileOnScreen = $NyProfil
+    $Path = "$($Global:RegPath)\$NyProfil"
 
-    $Path = "$($Global:RegPath)\$ValdProfil"
-            
-            # Töm alla fält först ifall profilen är ny eller saknar värden
-            foreach ($Key in $Global:MatrixTextBoxes.Keys) {
-                $Global:MatrixTextBoxes[$Key].Text = ""
-            }
+    # 3. Töm alla fält på skärmen inför laddningen
+    foreach ($Key in $Global:MatrixTextBoxes.Keys) {
+        $Global:MatrixTextBoxes[$Key].Text = ""
+    }
 
-            # Om nyckeln finns i registret, läs in värdena till rätt textruta
-            if (Test-Path $Path) {
-                foreach ($Key in $Global:MatrixTextBoxes.Keys) {
-                    $Varde = Get-ItemProperty -Path $Path -Name $Key -ErrorAction SilentlyContinue
-                    if ($Varde -and $Varde.$Key) {
-                        $Global:MatrixTextBoxes[$Key].Text = $Varde.$Key
-                    }
-                }
+    # 4. Läs in värdena från registret för den NYA profilen
+    if (Test-Path $Path) {
+        foreach ($Key in $Global:MatrixTextBoxes.Keys) {
+            $Varde = Get-ItemProperty -Path $Path -Name $Key -ErrorAction SilentlyContinue
+            if ($Varde -and $Varde.$Key) {
+                $Global:MatrixTextBoxes[$Key].Text = $Varde.$Key
             }
-    })
+        }
+    }
+})
 
     # =========================================================================================
     # GLOBAL LOGGNINGS-PANEL (PLACERAS OVANFÖR SPARA-KNAPPEN)
@@ -906,6 +997,16 @@ function Create-FormSettings {
     $Global:chkLogEnabled.Size = New-Object System.Drawing.Size(300, 20)
     $Global:chkLogEnabled.Checked = $Global:LogEnabled
     $panelSettings.Controls.Add($Global:chkLogEnabled)
+    # Spara direkt till registret så fort man bockar i eller ur rutan
+    $Global:chkLogEnabled.Add_CheckedChanged({
+            if (-not (Test-Path $Global:GlobalRegPath)) { New-Item -Path $Global:GlobalRegPath -Force | Out-Null }
+            $StatusString = $Global:chkLogEnabled.Checked.ToString()
+            Set-ItemProperty -Path $Global:GlobalRegPath -Name "LogEnabled" -Value $StatusString -Force
+    
+            # Uppdatera minnesvariabeln live så att loggningen aktiveras omedelbart
+            $Global:LogEnabled = $Global:chkLogEnabled.Checked
+            Write-KrimsonLog "Fil-loggning har ändrats till: $StatusString"
+        })
 
     # Etikett för loggsökväg
     $lblLogPath = New-Object System.Windows.Forms.Label
@@ -928,14 +1029,35 @@ function Create-FormSettings {
     $Global:txtLogPath.Anchor = [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Top
     $panelSettings.Controls.Add($Global:txtLogPath)
 
+    # Spara sökvägen till registret automatiskt när texten ändras
+    $Global:txtLogPath.Add_TextChanged({
+        if (-not (Test-Path $Global:GlobalRegPath)) { New-Item -Path $Global:GlobalRegPath -Force | Out-Null }
+        Set-ItemProperty -Path $Global:GlobalRegPath -Name "LogFilePath" -Value $Global:txtLogPath.Text -Force
+        $Global:LogFilePath = $Global:txtLogPath.Text
+    })
+
+    # Sätt en fast marginal (Padding) i toppen av barn-formuläret så att rullningsytan 
+    # fysiskt stoppas precis under den mörkblå topppanelen. Detta eliminerar det svarta blocket helt!
+    $Global:panelChildForm.Padding = New-Object System.Windows.Forms.Padding(0, 0, 0, 0)
+
+    # Lägg till inställningspanelen
     $Global:panelChildForm.Controls.Add($panelSettings)
+
+    # SÄKER OCH STABIL Z-ORDER JUSTERING (Utan kraschande if-parenteser)
+    $panelSettings.SendToBack()
+    if ($null -ne $Global:panelTop) { $Global:panelTop.BringToFront() }
+    if ($null -ne $Global:panelMenu) { $Global:panelMenu.BringToFront() }
 
     # Fyll dropdown-listan från registret direkt vid start
     Refresh-ProfileDropdown
-    
-    # Tvinga textrutorna att läsa in värdena för den profil som automatiskt valdes i dropdownen
-    $Global:comboMiljöer.SelectedIndex = 0
 
+    # Sätt dropdownen till ett tomt neutralläge vid uppstart
+    $Global:comboMiljöer.SelectedIndex = -1
+    $Global:comboMiljöer.Text = "-- Välj Miljöprofil --"
+
+    # # Loggning
+    $Global:chkLogEnabled.Checked = $Global:LogEnabled
+    $Global:txtLogPath.Text = $Global:LogFilePath
 }
 
 function Create-FormLogView {

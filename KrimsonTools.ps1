@@ -857,42 +857,31 @@ $Global:toolStripStatusSpringLeft.Add_MouseDown($Script:StatusMouseHandler)
 }
 
 function Toggle-KrimsonLogView {
-    # Kontrollera om loggvisaren redan är öppen och synlig
     $isLogOpen = $Global:panelChildForm.Controls.ContainsKey("panelLogView")
     $RegPath = "HKCU:\Software\KrimsonTools"
     
     if ($isLogOpen) {
-        # # 1. LOGGEN ÄR ÖPPEN -> ÅTERVÄND TILL EXAKT DÄR ANVÄNDAREN KOM IFRÅN VIA REGISTRET
         $Global:panelChildForm.Controls.Clear()
         $Global:panelChildForm.Padding = New-Object System.Windows.Forms.Padding(0, 65, 0, 0)
         
-        # Läs in exakt var användaren stod från registret
-        $SavedScreen = $null
+        $SavedScreen = ""
         $SavedTitle = ""
         if (Test-Path $RegPath) {
             $SavedScreen = (Get-ItemProperty -Path $RegPath -Name "LastActiveScreen" -ErrorAction SilentlyContinue).LastActiveScreen
             $SavedTitle = (Get-ItemProperty -Path $RegPath -Name "LastActiveScreenTitle" -ErrorAction SilentlyContinue).LastActiveScreenTitle
         }
         
-        # UNIVERSUELL ÅTERGÅNG: Kör skärmen om den finns, annars lämna arbetsytan tom (blank/svart skärm)
-        if ($SavedScreen -and $SavedScreen -ne "") {
+        if (-not [string]::IsNullOrEmpty($SavedScreen)) {
             Invoke-Screen -TargetFunction $SavedScreen -TitleLeft $SavedTitle -TitleRight "KrimsonTools"
-            Write-KrimsonLog "Stängde loggen och återvände via registerminne till: $SavedScreen"
         } else {
-            # Användaren lämnade appen i en blank/svart skärm innan loggen öppnades -> behåll den tom!
+            # Återvänd till din önskade blanka, rena arbetsskärm utan Settings-hopp!
             if ($Global:lblTitleLeft) { $Global:lblTitleLeft.Text = "" }
             if ($Global:lblTitleRight) { $Global:lblTitleRight.Text = "" }
-            Write-KrimsonLog "Stängde loggen och återvände till blank skärm enligt användarens historik."
         }
-        
     } else {
-        # # 2. LOGGEN ÄR STÄNGD -> ÖPPNA LOGGVISAREN
         if ($Global:panelChildForm) { $Global:panelChildForm.Controls.Clear() }
         $Global:panelChildForm.Padding = New-Object System.Windows.Forms.Padding(0, 0, 0, 0)
-        
         Invoke-Screen -TargetFunction "Create-FormLogView" -TitleLeft "Händelselogg" -TitleRight "Systemstatus"
-        Write-KrimsonLog "Öppnade händelseloggen via statusraden."
-        
         if ($Global:panelChildForm) {
             foreach ($Control in $Global:panelChildForm.Controls) {
                 if ($Control.Name -eq "panelLogView") {
@@ -902,8 +891,6 @@ function Toggle-KrimsonLogView {
             }
         }
     }
-    
-    # Återställ statusraden och gränssnittet till sitt normala läge
     $Global:toolStripStatusLabelLeft.Text = "Redo"
     $statusStrip.BringToFront()
     $Global:formMain.Refresh()

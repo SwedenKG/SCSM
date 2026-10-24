@@ -142,11 +142,19 @@ function Close-AllSubMenus {
 
 # Funktion för att dynamiskt ladda en ny skärm i högerpanelen (panelChildForm)
 function Invoke-Screen {
-    param (
+    param(
         [string]$TargetFunction,
         [string]$TitleLeft,
-        [string]$TitleRight = ""
+        [string]$TitleRight
     )
+    
+    # --- REGISTERMINNE: SPARA AKTIV SKÄRM UNIVERSUELLT I REGISTRET ---
+    $RegPath = "HKCU:\Software\KrimsonTools"
+    if ($TargetFunction -and $TargetFunction -notmatch "Create-FormLogView") {
+        if (-not (Test-Path $RegPath)) { [void](New-Item -Path $RegPath -Force) }
+        Set-ItemProperty -Path $RegPath -Name "LastActiveScreen" -Value $TargetFunction -Force
+        Set-ItemProperty -Path $RegPath -Name "LastActiveScreenTitle" -Value $TitleLeft -Force
+    }
 
     # #1. SPARA INSTÄLLNINGARNA FÖRST (om användaren lämnar inställningsvyn)
     Save-KrimsonSettings
@@ -653,107 +661,272 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     # =========================================================================================
     # 3. STATUSRAD (LÄNGST NER - APPLICERAR ORANGE FÄRG OCH GLOBAL TEXT)
     # =========================================================================================
-    # HÄR SKAPAS DEN GLOBALA VARIABELN SOM MENYN BEHÖVER:
-    $Global:toolStripStatusLabelLeft = New-Object System.Windows.Forms.ToolStripStatusLabel
-    $Global:toolStripStatusLabelLeft.Name = "toolStripStatusLabelLeft"
-    $Global:toolStripStatusLabelLeft.Text = ""
-    $Global:toolStripStatusLabelLeft.Margin = New-Object System.Windows.Forms.Padding(0, 1, 0, 0)
+# # HÄR SKAPAS DE GLOBALA VARIABLERNA SOM MENYN BEHÖVER
+# =========================================================================================
+# Säkra att statusraden skapas som ett objekt i Windows!
+$statusStrip = New-Object System.Windows.Forms.StatusStrip
+$statusStrip.AutoSize = $false
+$statusStrip.BackColor = [System.Drawing.Color]::FromArgb(255, 180, 0)
+$statusStrip.Dock = [System.Windows.Forms.DockStyle]::Bottom
+$statusStrip.Font = New-Object System.Drawing.Font("Verdana", 10)
+$statusStrip.GripStyle = [System.Windows.Forms.ToolStripGripStyle]::Hidden
 
-    $statusStrip = New-Object System.Windows.Forms.StatusStrip
-    $statusStrip.AutoSize = $False
-    $statusStrip.BackColor = [System.Drawing.Color]::FromArgb(255, 180, 0) # Orange #FFB400
-    $statusStrip.Dock = [System.Windows.Forms.DockStyle]::Bottom
-    $statusStrip.Font = New-Object System.Drawing.Font("Verdana", 10)
-    $statusStrip.GripStyle = [System.Windows.Forms.ToolStripGripStyle]::Hidden
-    $statusStrip.Items.AddRange($Global:toolStripStatusLabelLeft)
-    $statusStrip.Name = "statusStrip"
-    $statusStrip.Size = New-Object System.Drawing.Size(0, 28)
+# 1. Status-textboxen till vänster (LÅST OCH FIXERAD STORLEK)
+$Global:toolStripStatusLabelLeft = New-Object System.Windows.Forms.ToolStripStatusLabel
+$Global:toolStripStatusLabelLeft.Name = "toolStripStatusLabelLeft"
+$Global:toolStripStatusLabelLeft.Text = "Redo"
+$Global:toolStripStatusLabelLeft.AutoSize = $false
+$Global:toolStripStatusLabelLeft.Size = New-Object System.Drawing.Size(450, 22)
+$Global:toolStripStatusLabelLeft.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+$Global:toolStripStatusLabelLeft.ForeColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
 
-    # =========================================================================================
-    # 4. MONTERING AV KONTROLLER (DEN DEFINITIVA ORIGINALORDNINGEN)
-    # =========================================================================================
-    
-    $Global:panelChildForm.Padding = New-Object System.Windows.Forms.Padding(0, 65, 0, 0)
+# 2. Den klickbara mittenytan (En osynlig fjäder som fyller ut hela tomrummet i mitten)
+$Global:toolStripStatusSpringLeft = New-Object System.Windows.Forms.ToolStripStatusLabel
+$Global:toolStripStatusSpringLeft.Spring = $true
+$Global:toolStripStatusSpringLeft.Text = ""
+$Global:toolStripStatusSpringLeft.Available = $true
 
-    # 1. Montera arbetsytan (Fill) ALLRA FÖRST. I WinForms innebär detta att den tar ytan som blir över 
-    # efter att de andra kontrollerna har mutat in sina kanter.
-    $Global:panelChildForm.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $Global:formMain.Controls.Add($Global:panelChildForm)
-    
-    # 2. Montera toppanelen (Top)
-    $panelTop.Dock = [System.Windows.Forms.DockStyle]::Top
-    $Global:formMain.Controls.Add($panelTop)
-    
-    # 3. Montera statusraden i botten (Bottom)
-    $statusStrip.Dock = [System.Windows.Forms.DockStyle]::Bottom
-    $Global:formMain.Controls.Add($statusStrip)
-    
-    # 4. Montera sidomenyn (Left) ALLRA SIST. Då spärrar den vänsterkanten från tak till botten 
-    # och trycker undan både toppanelen, statusraden och arbetsytan till höger!
-    $panelLeftContainer.Dock = [System.Windows.Forms.DockStyle]::Left
-    $Global:formMain.Controls.Add($panelLeftContainer)
-    
-    # --- DUBBELKLICK PÅ STATUSRADEN VISA/DÖLJER LOGGEN ---
-    $statusStrip.DoubleClickEnabled = $true
+# 3. Textetikett före rullgardinsmenyn till höger
+$Global:toolStripStatusLabelEnvText = New-Object System.Windows.Forms.ToolStripStatusLabel
+$Global:toolStripStatusLabelEnvText.Text = "Miljöprofil:"
+$Global:toolStripStatusLabelEnvText.Font = New-Object System.Drawing.Font("Verdana", 9, [System.Drawing.FontStyle]::Bold)
+$Global:toolStripStatusLabelEnvText.ForeColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
 
-    $statusStrip.Add_DoubleClick({
-        Toggle-KrimsonLogView
-    })
+# 4. Själva rullgardinsboxen för miljöerna
+$Global:toolStripComboEnvironment = New-Object System.Windows.Forms.ToolStripComboBox
+$Global:toolStripComboEnvironment.Size = New-Object System.Drawing.Size(140, 22)
+$Global:toolStripComboEnvironment.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+$Global:toolStripComboEnvironment.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$Global:toolStripComboEnvironment.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
+$Global:toolStripComboEnvironment.ForeColor = [System.Drawing.Color]::White
+$Global:toolStripComboEnvironment.Margin = New-Object System.Windows.Forms.Padding(0, 0, 5, 0)
 
-    $Global:toolStripStatusLabelLeft.Add_Click({
-        # Eftersom ToolStripStatusLabel saknar inbyggd DoubleClick i vissa miljöer,
-        # använder vi en säker Click-händelse som simulerar eller skickar vidare anropet
-        Toggle-KrimsonLogView
-    })
-
-    # # 5. Kör menylayouten så att den slimmade bredden räknas ut dynamiskt
-    Build-DynamicMenu -ParentContainer $panelLeftContainer
-    $pictureBoxLogo.BringToFront()
-
-    # Tvinga fönstret att uppdatera grafiken
-    $Global:formMain.Refresh()
-
-    # =========================================================================================
-    # HOVRINGSHÄNDELSER FÖR LOGOTYPEN (Placerade efter att statusraden har skapats)
-    # =========================================================================================
-    
-    $pictureBoxLogo.Add_MouseEnter({
-        if ($Global:toolStripStatusLabelLeft) {
-            $Global:toolStripStatusLabelLeft.Text = "Settings - Konfiguration och inställningar"
-            $Global:formMain.Refresh() # Tvingar hela fönstret att rita om sig och visa texten direkt
+# Ladda profilerna dynamiskt från inställningsvyn
+if ($Global:comboBoxSettingsProfile -and $Global:comboBoxSettingsProfile.Items.Count -gt 0) {
+    foreach ($Item in $Global:comboBoxSettingsProfile.Items) {
+        if ($Item -notmatch "Välj Miljöprofil") {
+            [void]$Global:toolStripComboEnvironment.Items.Add($Item)
         }
-    })
+    }
+} else {
+    [void]$Global:toolStripComboEnvironment.Items.Add("IT")
+    [void]$Global:toolStripComboEnvironment.Items.Add("PreProd")
+    [void]$Global:toolStripComboEnvironment.Items.Add("Prod")
+    [void]$Global:toolStripComboEnvironment.Items.Add("Test")
+}
 
-    $pictureBoxLogo.Add_MouseLeave({
-        if ($Global:toolStripStatusLabelLeft) {
-            $Global:toolStripStatusLabelLeft.Text = ""
-        $Global:formMain.Refresh() # Tvingar fönstret att rensa bort texten direkt
+# --- REGISTERLOGIK FÖR ATT SPARA OCH KOMMA IHÅG MILJÖ ---
+$RegPath = "HKCU:\Software\KrimsonTools"
+
+$Global:toolStripComboEnvironment.Add_SelectedIndexChanged({
+    $Global:formMain.ActiveControl = $null
+    $ValdMiljo = $Global:toolStripComboEnvironment.SelectedItem.ToString()
+    Write-KrimsonLog "Aktiv miljö ändrad till: $ValdMiljo"
+    if (-not (Test-Path $RegPath)) { [void](New-Item -Path $RegPath -Force) }
+    Set-ItemProperty -Path $RegPath -Name "LastActiveEnvironment" -Value $ValdMiljo -Force
+})
+
+# --- LÄS FRÅN REGISTRET VID UPPSTART ---
+$LastSavedEnv = $null
+if (Test-Path $RegPath) {
+    $LastSavedEnv = (Get-ItemProperty -Path $RegPath -Name "LastActiveEnvironment" -ErrorAction SilentlyContinue).LastActiveEnvironment
+}
+
+# Aktivera den sparade miljön om den finns, annars ta första i listan
+if ($LastSavedEnv -and $Global:toolStripComboEnvironment.Items.Contains($LastSavedEnv)) {
+    $Global:toolStripComboEnvironment.SelectedItem = $LastSavedEnv
+} elseif ($Global:toolStripComboEnvironment.Items.Count -gt 0) {
+    $Global:toolStripComboEnvironment.SelectedIndex = 0
+}
+
+# --- MONTERA ALLT I STATUSRADEN I EXAKT ORDNING FÖR OSYNLIG MITTENZON ---
+$statusStrip.Items.AddRange(@(
+    $Global:toolStripStatusLabelLeft, 
+    $Global:toolStripStatusSpringLeft, # Denna osynliga fjäder tar upp hela mittendelen!
+    $Global:toolStripStatusLabelEnvText,
+    $Global:toolStripComboEnvironment
+))
+
+$statusStrip.Name = "statusStrip"
+$statusStrip.Size = New-Object System.Drawing.Size(0, 30)
+
+# =========================================================================================
+# HOVRINGSHÄNDELSER FÖR DEN OSYNLIGA LOGG-ZONEN I MITTEN
+# =========================================================================================
+
+$Global:toolStripStatusSpringLeft.Add_MouseEnter({
+    if ($Global:toolStripStatusLabelLeft) {
+        # Spara undan nuvarande text så vi kan återställa den sen
+        $Script:OldStatusText = $Global:toolStripStatusLabelLeft.Text
+        
+        # Sätt den snygga hovringstexten
+        $Global:toolStripStatusLabelLeft.Text = "[Dubbelklicka för Händelselogg]"
+        $Global:formMain.Refresh()
     }
 })
+
+$Global:toolStripStatusSpringLeft.Add_MouseLeave({
+    if ($Global:toolStripStatusLabelLeft) {
+        # Återställ till "Redo" eller vad som stod innan musen åkte in
+        if ($Script:OldStatusText) {
+            $Global:toolStripStatusLabelLeft.Text = $Script:OldStatusText
+        } else {
+            $Global:toolStripStatusLabelLeft.Text = "Redo"
+        }
+        $Global:formMain.Refresh()
+    }
+})
+
+# --- GLOBALT OCH SKOTTSÄKERT DUBBELKLICK PÅ HELA STATUSRADEN ---
+$Global:LastStatusClickTicks = 0
+
+$Script:StatusDoubleClickHandler = {
+    $CurrentTicks = [DateTime]::Now.Ticks
+    $DoubleClickTicks = [System.Windows.Forms.SystemInformation]::DoubleClickTime * 10000
+    
+    if (($CurrentTicks - $Global:LastStatusClickTicks) -le $DoubleClickTicks) {
+        
+        # 1. Kör din inbyggda funktion som döljer ärenden och bygger loggen dynamiskt
+        Toggle-KrimsonLogView
+        
+        # 2. Tvinga gränssnittet att trycka fram den nya vyn i ljuset
+        $statusStrip.BringToFront()
+        $Global:panelChildForm.Refresh()
+        $Global:formMain.Refresh()
+        
+        $Global:LastStatusClickTicks = 0
+    } else {
+        $Global:LastStatusClickTicks = $CurrentTicks
+    }
+}
+
+# =========================================================================================
+# # 4. MONTERING AV KONTROLLER (DEN RENA ORIGINALORDNINGEN)
+# =========================================================================================
+$Global:panelChildForm.Padding = New-Object System.Windows.Forms.Padding(0, 65, 0, 0)
+
+# 1. Skapa arbetsytan (Fill) som en stabil bottenplatta FÖRST
+$Global:panelChildForm.Dock = [System.Windows.Forms.DockStyle]::Fill
+$Global:formMain.Controls.Add($Global:panelChildForm)
+
+# 2. Montera toppanelen (Top)
+$panelTop.Dock = [System.Windows.Forms.DockStyle]::Top
+$Global:formMain.Controls.Add($panelTop)
+
+# 3. Montera statusraden i botten (Bottom)
+$statusStrip.Dock = [System.Windows.Forms.DockStyle]::Bottom
+$Global:formMain.Controls.Add($statusStrip)
+
+# 4. Montera sidomenyn (Left)
+$panelLeftContainer.Dock = [System.Windows.Forms.DockStyle]::Left
+$Global:formMain.Controls.Add($panelLeftContainer)
+
+# 5. Kör menylayouten som bygger upp ditt snygga menysystem live
+Build-DynamicMenu -ParentContainer $panelLeftContainer
+$pictureBoxLogo.BringToFront()
+
+$Global:formMain.Refresh()
+
+
+# =========================================================================================
+# HOVRINGSHÄNDELSER FÖR LOGOTYPEN
+# =========================================================================================
+$pictureBoxLogo.Add_MouseEnter({
+    if ($Global:toolStripStatusLabelLeft) {
+        $Global:toolStripStatusLabelLeft.Text = "Settings - Konfiguration och inställningar"
+        $Global:formMain.Refresh()
+    }
+})
+
+$pictureBoxLogo.Add_MouseLeave({
+    if ($Global:toolStripStatusLabelLeft) {
+        $Global:toolStripStatusLabelLeft.Text = ""
+        $Global:formMain.Refresh()
+    }
+})
+
+# --- GLOBALT OCH SKOTTSÄKERT DUBBELKLICK PÅ STATUSRADS-NIVÅ ---
+$Script:StatusMouseHandler = {
+    param($sender, $e)
+    if ($e.Clicks -eq 2) {
+        $Global:toolStripStatusLabelLeft.Text = "[Triggar skärmväxling...]"
+        
+        # SARA HISTORIK LIVE: Kolla var vi är precis nu innan loggen tillåts ladda
+        $isLogOpen = $Global:panelChildForm.Controls.ContainsKey("panelLogView")
+        if (-not $isLogOpen -and $Global:currentActiveScreen) {
+            $Global:PreviousActiveScreen = [PSCustomObject]@{
+                Function   = "Create-Form$($Global:currentActiveScreen)"
+                TitleLeft  = $Global:currentActiveScreen
+                TitleRight = "KrimsonTools"
+            }
+        }
+        
+        # Kör din inbyggda SCSM-navigering
+        Toggle-KrimsonLogView
+        
+        # Säkra att grafiken hänger med omedelbart
+        $statusStrip.BringToFront()
+        $Global:formMain.Refresh()
+    }
+}
+
+# Koppla hårdvarulyssnaren till ALLA delar i botten för 100 % klick-täckning
+$statusStrip.Add_MouseDown($Script:StatusMouseHandler)
+$Global:toolStripStatusLabelLeft.Add_MouseDown($Script:StatusMouseHandler)
+$Global:toolStripStatusSpringLeft.Add_MouseDown($Script:StatusMouseHandler)
+
     [void]$Global:formMain.ShowDialog()
 }
 
 function Toggle-KrimsonLogView {
-
     # Kontrollera om loggvisaren redan är öppen och synlig
     $isLogOpen = $Global:panelChildForm.Controls.ContainsKey("panelLogView")
-
+    $RegPath = "HKCU:\Software\KrimsonTools"
+    
     if ($isLogOpen) {
-        # 1. LOGGEN ÄR ÖPPEN -> ÅTERVÄND AUTOMATISKT DÄR VI VAR INNAN
-        if ($null -ne $Global:PreviousActiveScreen -and -not [string]::IsNullOrWhiteSpace($Global:PreviousActiveScreen.Function)) {
-            Invoke-Screen -TargetFunction $Global:PreviousActiveScreen.Function `
-                          -TitleLeft $Global:PreviousActiveScreen.TitleLeft `
-                          -TitleRight $Global:PreviousActiveScreen.TitleRight
-            Write-KrimsonLog "Stängde loggen och återvände automatiskt till: $($Global:PreviousActiveScreen.TitleLeft)"
+        # # 1. LOGGEN ÄR ÖPPEN -> ÅTERVÄND TILL EXAKT DÄR ANVÄNDAREN KOM IFRÅN VIA REGISTRET
+        $Global:panelChildForm.Controls.Clear()
+        $Global:panelChildForm.Padding = New-Object System.Windows.Forms.Padding(0, 65, 0, 0)
+        
+        # Läs in exakt var användaren stod från registret
+        $SavedScreen = $null
+        $SavedTitle = "Daily"
+        if (Test-Path $RegPath) {
+            $SavedScreen = (Get-ItemProperty -Path $RegPath -Name "LastActiveScreen" -ErrorAction SilentlyContinue).LastActiveScreen
+            $SavedTitle = (Get-ItemProperty -Path $RegPath -Name "LastActiveScreenTitle" -ErrorAction SilentlyContinue).LastActiveScreenTitle
+        }
+        
+        # Om vi hittade en sparad skärm, kör den direkt helt utan undantag eller hårdkodade namn!
+        if ($SavedScreen) {
+            Invoke-Screen -TargetFunction $SavedScreen -TitleLeft $SavedTitle -TitleRight "KrimsonTools"
+            Write-KrimsonLog "Stängde loggen och återvände via registerminne till: $SavedScreen"
+        } else {
+            # Absolut sista panik-fallback om registret skulle vara tomt vid allra första körningen
+            Invoke-Screen -TargetFunction "Create-FormDaily" -TitleLeft "Daily" -TitleRight "KrimsonTools"
+        }
+        
     } else {
-        # 2. LOGGEN ÄR STÄNGD -> ÖPPNA LOGGVISAREN
+        # # 2. LOGGEN ÄR STÄNGD -> ÖPPNA LOGGVISAREN
+        if ($Global:panelChildForm) { $Global:panelChildForm.Controls.Clear() }
+        $Global:panelChildForm.Padding = New-Object System.Windows.Forms.Padding(0, 0, 0, 0)
+        
         Invoke-Screen -TargetFunction "Create-FormLogView" -TitleLeft "Händelselogg" -TitleRight "Systemstatus"
         Write-KrimsonLog "Öppnade händelseloggen via statusraden."
+        
+        if ($Global:panelChildForm) {
+            foreach ($Control in $Global:panelChildForm.Controls) {
+                if ($Control.Name -eq "panelLogView") {
+                    $Control.Visible = $true
+                    $Control.BringToFront()
+                }
+            }
+        }
     }
-}
-
-    # Skriv den första raden i loggen precis innan gränssnittet öppnas
-    Write-KrimsonLog "KrimsonTools GUI startades - Gränssnitt helt inläst."
+    
+    # Återställ statusraden och gränssnittet till sitt normala läge
+    $Global:toolStripStatusLabelLeft.Text = "Redo"
+    $statusStrip.BringToFront()
+    $Global:formMain.Refresh()
 }
 
 # =========================================================================================

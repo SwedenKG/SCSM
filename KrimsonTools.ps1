@@ -148,6 +148,17 @@ function Invoke-Screen {
         [string]$TitleRight
     )
     
+    # --- REGISTERMINNE: SPARA AKTIV SKÄRM UNIVERSUELLT I REGISTRET ---
+    $RegPath = "HKCU:\Software\KrimsonTools"
+    if ($TargetFunction -and $TargetFunction -notmatch "Create-FormLogView") {
+        # Vi blockerar 'Create-FormSettings' från att sparas om fönstret inte har visats än (ShowDialog)
+        if ($TargetFunction -ne "Create-FormSettings" -or ($Global:formMain -and $Global:formMain.Visible)) {
+            if (-not (Test-Path $RegPath)) { [void](New-Item -Path $RegPath -Force) }
+            Set-ItemProperty -Path $RegPath -Name "LastActiveScreen" -Value $TargetFunction -Force
+            Set-ItemProperty -Path $RegPath -Name "LastActiveScreenTitle" -Value $TitleLeft -Force
+        }
+    }
+
     # #1. SPARA INSTÄLLNINGARNA FÖRST (om användaren lämnar inställningsvyn)
     Save-KrimsonSettings
     $Global:SettingsIsOpen = $false
@@ -833,17 +844,6 @@ $Script:StatusMouseHandler = {
     param($sender, $e)
     if ($e.Clicks -eq 2) {
         $Global:toolStripStatusLabelLeft.Text = "[Triggar skärmväxling...]"
-        
-        # Spara ner din gällande rubrik i registret direkt vid klicket!
-        # Om rubriken är tom (blank skärm), nollställer vi registret så att vi hittar tillbaka dit.
-        $RegPath = "HKCU:\Software\KrimsonTools"
-        if (-not (Test-Path $RegPath)) { [void](New-Item -Path $RegPath -Force) }
-        
-        $CurrentTitle = $Global:lblTitleLeft.Text
-        if ($CurrentTitle -match "KrimsonTools|Händelselogg" -or [string]::IsNullOrWhiteSpace($CurrentTitle)) {
-            Set-ItemProperty -Path $RegPath -Name "LastActiveScreen" -Value "" -Force
-        }
-        
         Toggle-KrimsonLogView
     }
 }

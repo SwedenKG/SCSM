@@ -693,33 +693,17 @@ NxPNGl5nuKLfejg1SgZptNfdb8Bolm6aOirFMHXqkc5OSHVyosMWfQZNTC+0XLY0Ey/1DGgyHfn9BLuI
     $panelLeftContainer.Dock = [System.Windows.Forms.DockStyle]::Left
     $Global:formMain.Controls.Add($panelLeftContainer)
     
-    # --- NY SÄKER LOGG-KNAPP ---
-    $btnShowLog = New-Object System.Windows.Forms.Button
-    $btnShowLog.Text = "📜 Visa Systemlogg"
-    $btnShowLog.Font = New-Object System.Drawing.Font("Verdana", 9, [System.Drawing.FontStyle]::Bold)
-    $btnShowLog.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105) # Matchar din mörkblå menyfärg
-    $btnShowLog.ForeColor = [System.Drawing.Color]::White
-    $btnShowLog.Dock = [System.Windows.Forms.DockStyle]::Bottom # Lägger den absolut längst ner i sidomenyn
-    $btnShowLog.Height = 40
-    $btnShowLog.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $btnShowLog.FlatAppearance.BorderSize = 0
-    $btnShowLog.Cursor = [System.Windows.Forms.Cursors]::Hand
+    # --- DUBBELKLICK PÅ STATUSRADEN VISA/DÖLJER LOGGEN ---
+    $statusStrip.DoubleClickEnabled = $true
 
-    $btnShowLog.Add_Click({
+    $statusStrip.Add_DoubleClick({
         Toggle-KrimsonLogView
     })
 
-    $panelLeftContainer.Controls.Add($btnShowLog)
-
-    # --- AUTOMATISKT FUSK: Låt statusraden klicka på knappen åt dig vid DUBBELKLICK ---
-    $statusStrip.DoubleClickEnabled = $true
-    $Global:toolStripStatusLabelLeft.DoubleClickEnabled = $true
-
-    $statusStrip.Add_DoubleClick({
-        $btnShowLog.PerformClick()
-    })
-    $Global:toolStripStatusLabelLeft.Add_DoubleClick({
-        $btnShowLog.PerformClick()
+    $Global:toolStripStatusLabelLeft.Add_Click({
+        # Eftersom ToolStripStatusLabel saknar inbyggd DoubleClick i vissa miljöer,
+        # använder vi en säker Click-händelse som simulerar eller skickar vidare anropet
+        Toggle-KrimsonLogView
     })
 
     # # 5. Kör menylayouten så att den slimmade bredden räknas ut dynamiskt
@@ -756,19 +740,16 @@ function Toggle-KrimsonLogView {
 
     if ($isLogOpen) {
         # 1. LOGGEN ÄR ÖPPEN -> ÅTERVÄND AUTOMATISKT DÄR VI VAR INNAN
-                if ($null -ne $Global:PreviousActiveScreen -and -not [string]::IsNullOrWhiteSpace($Global:PreviousActiveScreen.Function)) {
+        if ($null -ne $Global:PreviousActiveScreen -and -not [string]::IsNullOrWhiteSpace($Global:PreviousActiveScreen.Function)) {
             Invoke-Screen -TargetFunction $Global:PreviousActiveScreen.Function `
                           -TitleLeft $Global:PreviousActiveScreen.TitleLeft `
                           -TitleRight $Global:PreviousActiveScreen.TitleRight
             Write-KrimsonLog "Stängde loggen och återvände automatiskt till: $($Global:PreviousActiveScreen.TitleLeft)"
-        } else {
-            # Om ingen historik finns (t.ex. vid uppstart), rensa bara skärmen till tomt rent läge
-            $Global:panelChildForm.Controls.Clear()
-            if ($Global:lblTitleLeft) { $Global:lblTitleLeft.Text = "" }
-            if ($Global:lblTitleRight) { $Global:lblTitleRight.Text = "" }
-            $Global:LogViewIsOpen = $false
-            $Global:formMain.Refresh()
-        }
+    } else {
+        # 2. LOGGEN ÄR STÄNGD -> ÖPPNA LOGGVISAREN
+        Invoke-Screen -TargetFunction "Create-FormLogView" -TitleLeft "Händelselogg" -TitleRight "Systemstatus"
+        Write-KrimsonLog "Öppnade händelseloggen via statusraden."
+    }
 }
 
     # Skriv den första raden i loggen precis innan gränssnittet öppnas
@@ -778,6 +759,36 @@ function Toggle-KrimsonLogView {
 # =========================================================================================
 # ZON 5: SKÄRMFUNKTIONER (Platshållare för dina vyer)
 # =========================================================================================
+
+function Create-FormLogView {
+    # Skapa behållarpanelen för loggvyn
+    $panelLogView = New-Object System.Windows.Forms.Panel
+    $panelLogView.Name = "panelLogView"
+    $panelLogView.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $panelLogView.BackColor = [System.Drawing.Color]::FromArgb(31, 31, 43)
+
+    # Skapa själva textrutan där loggtexten ska visas
+    $Global:txtLogView = New-Object System.Windows.Forms.RichTextBox
+    $Global:txtLogView.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $Global:txtLogView.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
+    $Global:txtLogView.ForeColor = [System.Drawing.Color]::LightGreen
+    $Global:txtLogView.Font = New-Object System.Drawing.Font("Consolas", 10)
+    $Global:txtLogView.ReadOnly = $true
+    $Global:txtLogView.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+
+    # Läs in allt som hittills har sparats i minnesbufferten ($Global:LogBuffer)
+    if ($Global:LogBuffer) {
+        $Global:txtLogView.Text = $Global:LogBuffer.ToString()
+        
+        # Snygg automatiskt scroll till botten så man ser de senaste händelserna direkt
+        $Global:txtLogView.SelectionStart = $Global:txtLogView.TextLength
+        $Global:txtLogView.ScrollToCaret()
+    }
+
+    # Montera kontrollerna på arbetsytan
+    $panelLogView.Controls.Add($Global:txtLogView)
+    $Global:panelChildForm.Controls.Add($panelLogView)
+}
 
 function Create-FormSettings {
     
@@ -1144,7 +1155,73 @@ function Create-FormForberedelseSteg1 {
     $Global:panelChildForm.Controls.Add($panelRelease)
 }
 
-function Create-formÄrenden {
+function Update-KrimsonArendenView {
+    param (
+        [string]$SupportGroup,
+        [string]$Analyst
+    )
+
+    Write-KrimsonLog "Uppdaterar ärendelistan för Supportgrupp: '$SupportGroup' och Handläggare: '$Analyst'..."
+
+    # Skapa en tom datatabell med samma kolumner som gränssnittet förväntar sig
+    $newDataTable = New-Object System.Data.DataTable
+    [void]$newDataTable.Columns.Add("Ärende Nr.")
+    [void]$newDataTable.Columns.Add("Beskrivning")
+    [void]$newDataTable.Columns.Add("Startdatum")
+
+    # Kontrollera att SMLets-miljön är inläst och att vi har anslutning
+    if ($Global:SMEnvironmentLoaded -eq $true) {
+        try {
+            # --- HÄR HÄMTAR VI RIKTIG DATA VIA SMLETS ---
+            # 1. Hämta klassen för Incidenter (eller önskad ärendetyp)
+            $IncidentClass = Get-SCSMClass -Name "System.WorkItem.Incident$"
+            
+            # 2. Hämta ärenden som matchar supportgruppen (anpassa fältnamn efter er miljö om det behövs)
+            $Tickets = Get-SCSMObject -Class $IncidentClass | Where-Object { $_.TierQueue.Value -eq $SupportGroup }
+
+            foreach ($Ticket in $Tickets) {
+                # Hämta tilldelad handläggare för ärendet via relationen
+                $AssignedUser = Get-SCSMRelationshipObject -BySource $Ticket | Where-Object { $_.RelationshipId -eq "System.WorkItemAssignedToUser$" } | Select-Object -ExpandProperty TargetObject
+                $DisplayName = if ($AssignedUser) { $AssignedUser.DisplayName } else { "Unassigned" }
+
+                # Filtrera på vald handläggare om användaren inte har valt "Alla Handläggare"
+                if ($Analyst -eq "Alla Handläggare" -or $DisplayName -eq $Analyst) {
+                    $row = $newDataTable.NewRow()
+                    $row["Ärende Nr."] = $Ticket.Id
+                    $row["Beskrivning"] = $Ticket.Title
+                    $row["Startdatum"] = if ($Ticket.CreatedDate) { $Ticket.CreatedDate.ToString("yyyy-MM-dd HH:mm") } else { "" }
+                    [void]$newDataTable.Rows.Add($row)
+                }
+            }
+        }
+        catch {
+            Write-KrimsonLog "FEL: Misslyckades med att hämta live-data från SCSM: $_"
+        }
+    } else {
+        # --- RESERVLÄGE (Om skriptet körs utanför Kriminalvårdens SM-nätverk) ---
+        Write-KrimsonLog "SCSM-miljö ej tillgänglig. Genererar simulerad testdata för demonstration."
+        
+        $row1 = $newDataTable.NewRow()
+        $row1["Ärende Nr."] = "IR99542"
+        $row1["Beskrivning"] = "Lösenordsåterställning - Godstransporten"
+        $row1["Startdatum"] = (Get-Date).AddHours(-2).ToString("yyyy-MM-dd HH:mm")
+        [void]$newDataTable.Rows.Add($row1)
+
+        $row2 = $newDataTable.NewRow()
+        $row2["Ärende Nr."] = "IR99611"
+        $row2["Beskrivning"] = "Skrivarproblem på anstalten"
+        $row2["Startdatum"] = (Get-Date).AddMinutes(-30).ToString("yyyy-MM-dd HH:mm")
+        [void]$newDataTable.Rows.Add($row2)
+    }
+
+    # Skicka ut den nya datan till gränssnittet och tvinga tabellen att rita om sig direkt
+    $Global:dataGridViewArenden.DataSource = $newDataTable
+    $Global:dataGridViewArenden.Refresh()
+    
+    Write-KrimsonLog "Ärendelistan har uppdaterats på skärmen."
+}
+
+function Create-FormArenden {
     Write-Host "[*] Startar Ärenden-vyn baserat på ditt original-skript..." -ForegroundColor Cyan
 
     # Rensa den stora högerpanelen helt först
@@ -1153,66 +1230,74 @@ function Create-formÄrenden {
     # =========================================================================================
     # 1. SKAPA ARBETSYTAN (Ett speglat fönster inuti panelen)
     # =========================================================================================
-    $formTickets = New-Object System.Windows.Forms.Form
-    $formTickets.TopLevel = $False
-    $formTickets.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
-    $formTickets.BackColor = [System.Drawing.Color]::FromArgb(31, 31, 43) # Matchar huvudfönstrets mörka färg
-    $formTickets.Dock = [System.Windows.Forms.DockStyle]::Fill
+    # Vi tömmer och återanvänder den befintliga globala panelen direkt
+    $Global:panelChildForm.BackColor = [System.Drawing.Color]::FromArgb(31, 31, 43)
 
     # =========================================================================================
     # 2. FILTERBOXAR OCH TEXT (PLATS OCH LABELS)
     # =========================================================================================
     
     # --- HANDLÄGGARE ---
-    $labelÄrendenAnalyst = New-Object System.Windows.Forms.Label
-    $labelÄrendenAnalyst.Text = "Handläggare"
-    $labelÄrendenAnalyst.ForeColor = [System.Drawing.Color]::FromArgb(160, 160, 160)
-    $labelÄrendenAnalyst.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-    $labelÄrendenAnalyst.Location = New-Object System.Drawing.Point(20, 15)
-    $labelÄrendenAnalyst.AutoSize = $True
+    $labelArendenAnalyst = New-Object System.Windows.Forms.Label
+    $labelArendenAnalyst.Text = "Handläggare:"
+    $labelArendenAnalyst.ForeColor = [System.Drawing.Color]::White
+    $labelArendenAnalyst.Font = New-Object System.Drawing.Font("Verdana", 10, [System.Drawing.FontStyle]::Bold) # Ändrad till Verdana
+    $labelArendenAnalyst.Location = New-Object System.Drawing.Point(20, 5)
+    $labelArendenAnalyst.AutoSize = $true
 
-    $comboBoxÄrendenAnalyst = New-Object System.Windows.Forms.ComboBox
-    $comboBoxÄrendenAnalyst.Location = New-Object System.Drawing.Point(20, 40)
-    $comboBoxÄrendenAnalyst.Size = New-Object System.Drawing.Size(250, 25)
-    $comboBoxÄrendenAnalyst.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-    $comboBoxÄrendenAnalyst.Items.AddRange(@('Gedin Kerry - HK', 'Alla Handläggare'))
-    $comboBoxÄrendenAnalyst.SelectedIndex = 0
+    $comboBoxArendenAnalyst = New-Object System.Windows.Forms.ComboBox
+    $comboBoxArendenAnalyst.Location = New-Object System.Drawing.Point(20, 35) # Perfekt Y-placering för Verdana
+    $comboBoxArendenAnalyst.Size = New-Object System.Drawing.Size(250, 25)
+    $comboBoxArendenAnalyst.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
+    $comboBoxArendenAnalyst.ForeColor = [System.Drawing.Color]::White
+    $comboBoxArendenAnalyst.Font = New-Object System.Drawing.Font("Verdana", 9) # Ändrad till Verdana
+    $comboBoxArendenAnalyst.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    $comboBoxArendenAnalyst.Items.AddRange(@('Gedin Kerry - HK', 'Alla Handläggare'))
+    $comboBoxArendenAnalyst.SelectedIndex = 0
 
-    # --- SUPPORTGROUP ---
-    $labelÄrendenSupportGroup = New-Object System.Windows.Forms.Label
-    $labelÄrendenSupportGroup.Text = "Supportgroup"
-    $labelÄrendenSupportGroup.ForeColor = [System.Drawing.Color]::FromArgb(160, 160, 160)
-    $labelÄrendenSupportGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-    $labelÄrendenSupportGroup.Location = New-Object System.Drawing.Point(650, 15)
-    $labelÄrendenSupportGroup.Anchor = [System.Windows.Forms.AnchorStyles]::Right
-    $labelÄrendenSupportGroup.AutoSize = $True
+    # --- SUPPORTGRUPP ---
+    $labelArendenSupportGroup = New-Object System.Windows.Forms.Label
+    $labelArendenSupportGroup.Text = "Supportgrupp:"
+    $labelArendenSupportGroup.ForeColor = [System.Drawing.Color]::White
+    $labelArendenSupportGroup.Font = New-Object System.Drawing.Font("Verdana", 10, [System.Drawing.FontStyle]::Bold) # Ändrad till Verdana
+    $labelArendenSupportGroup.Location = New-Object System.Drawing.Point(290, 5)
+    $labelArendenSupportGroup.AutoSize = $true
 
-    $comboBoxÄrendenSupportGroup = New-Object System.Windows.Forms.ComboBox
-    $comboBoxÄrendenSupportGroup.Location = New-Object System.Drawing.Point(650, 40)
-    $comboBoxÄrendenSupportGroup.Size = New-Object System.Drawing.Size(250, 25)
-    $comboBoxÄrendenSupportGroup.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-    $comboBoxÄrendenSupportGroup.Items.AddRange(@('IT Förvaltning Krimson', 'Alla Supportgrupper'))
-    $comboBoxÄrendenSupportGroup.SelectedIndex = 0
-    $comboBoxÄrendenSupportGroup.Anchor = [System.Windows.Forms.AnchorStyles]::Right
+    $comboBoxArendenSupportGroup = New-Object System.Windows.Forms.ComboBox
+    $comboBoxArendenSupportGroup.Location = New-Object System.Drawing.Point(290, 35) # Perfekt Y-placering för Verdana
+    $comboBoxArendenSupportGroup.Size = New-Object System.Drawing.Size(250, 25)
+    $comboBoxArendenSupportGroup.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
+    $comboBoxArendenSupportGroup.ForeColor = [System.Drawing.Color]::White
+    $comboBoxArendenSupportGroup.Font = New-Object System.Drawing.Font("Verdana", 9) # Ändrad till Verdana
+    $comboBoxArendenSupportGroup.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    $comboBoxArendenSupportGroup.Items.AddRange(@('IT Förvaltning Krimson', 'Alla Supportgrupper'))
+    $comboBoxArendenSupportGroup.SelectedIndex = 0
 
     # =========================================================================================
     # 3. DATA GRID VIEW (Den stora ärendetabellen)
     # =========================================================================================
-    $Global:dataGridViewÄrenden = New-Object System.Windows.Forms.DataGridView
-    $Global:dataGridViewÄrenden.Location = New-Object System.Drawing.Point(20, 90)
-    $Global:dataGridViewÄrenden.Size = New-Object System.Drawing.Size(880, 500)
-    $Global:dataGridViewÄrenden.Anchor = [System.Windows.Forms.AnchorStyles]@"
-Top, Bottom, Left, Right
-"@
-    # Snygg design på tabellen
-    $Global:dataGridViewÄrenden.BackgroundColor = [System.Drawing.Color]::FromArgb(160, 160, 160) # Din ljusgrå färg enligt skiss
-    $Global:dataGridViewÄrenden.ForeColor = [System.Drawing.Color]::Black
-    $Global:dataGridViewÄrenden.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-    $Global:dataGridViewÄrenden.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
-    $Global:dataGridViewÄrenden.AllowUserToAddRows = $False
-    $Global:dataGridViewÄrenden.ReadOnly = $True
-    $Global:dataGridViewÄrenden.EnableHeadersVisualStyles = $False
-    $Global:dataGridViewÄrenden.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(240, 240, 240)
+    $Global:dataGridViewArenden = New-Object System.Windows.Forms.DataGridView
+    $Global:dataGridViewArenden.Location = New-Object System.Drawing.Point(20, 75)
+    $Global:dataGridViewArenden.Size = New-Object System.Drawing.Size(910, 490)
+    $Global:dataGridViewArenden.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+    $Global:dataGridViewArenden.ScrollBars = [System.Windows.Forms.ScrollBars]::Both # Aktiverar scrollbars precis som i Settings
+    $Global:dataGridViewArenden.ForeColor = [System.Drawing.Color]::White
+    $Global:dataGridViewArenden.GridColor = [System.Drawing.Color]::FromArgb(43, 43, 60)
+    $Global:dataGridViewArenden.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+    $Global:dataGridViewArenden.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+    $Global:dataGridViewArenden.AllowUserToAddRows = $false
+    $Global:dataGridViewArenden.ReadOnly = $true
+    
+    # Gör radmarkeringarna mörkt orangea/krimson när man klickar på dem
+    $Global:dataGridViewArenden.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(31, 31, 43)
+    $Global:dataGridViewArenden.DefaultCellStyle.ForeColor = [System.Drawing.Color]::White
+    $Global:dataGridViewArenden.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(255, 180, 0)
+    $Global:dataGridViewArenden.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::Black
+
+    # Snygga till rubrikerna högst upp i tabellen
+    $Global:dataGridViewArenden.EnableHeadersVisualStyles = $false
+    $Global:dataGridViewArenden.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
+    $Global:dataGridViewArenden.ColumnHeadersDefaultCellStyle.ForeColor = [System.Drawing.Color]::White
 
     # Bygg kolumner direkt så tabellen inte startar tom
     $dataTable = New-Object System.Data.DataTable
@@ -1230,20 +1315,38 @@ Top, Bottom, Left, Right
     # =========================================================================================
     # 4. MONTERA OCH VISA ELEMENTEN
     # =========================================================================================
-    # Lägg till kontrollerna i fönstret $formTickets
-    $formTickets.Controls.AddRange(@(
-        $labelÄrendenAnalyst, $comboBoxÄrendenAnalyst,
-        $labelÄrendenSupportGroup, $comboBoxÄrendenSupportGroup,
-        $Global:dataGridViewÄrenden
-    ))
+    
+    # --- EVENTS: UPPDATERA DATA NÄR ANVÄNDAREN GÖR VAL ---
+    $comboBoxArendenSupportGroup.Add_SelectedIndexChanged({
+        Update-KrimsonArendenView -SupportGroup $comboBoxArendenSupportGroup.Text -Analyst $comboBoxArendenAnalyst.Text
+    })
 
-    # Montera $formTickets inuti huvudpanelen
-    $Global:panelChildForm.Controls.Add($formTickets)
-    $formTickets.Show()
+    $comboBoxArendenAnalyst.Add_SelectedIndexChanged({
+        Update-KrimsonArendenView -SupportGroup $comboBoxArendenSupportGroup.Text -Analyst $comboBoxArendenAnalyst.Text
+    })
+
+    # Montera alla element direkt på den responsiva huvudpanelen
+    $Global:panelChildForm.Controls.Add($labelArendenAnalyst)
+    $Global:panelChildForm.Controls.Add($comboBoxArendenAnalyst)
+    $Global:panelChildForm.Controls.Add($labelArendenSupportGroup)
+    $Global:panelChildForm.Controls.Add($comboBoxArendenSupportGroup)
+    $Global:panelChildForm.Controls.Add($Global:dataGridViewArenden)
     
     # Tvinga fönstret att rita upp sig direkt
     $Global:panelChildForm.BringToFront()
     $Global:panelChildForm.Refresh()
+
+        # Dynamisk resize-lyssnare som tvingar tabellen att sträcka ut sig live när du ändrar fönsterstorlek
+    $Global:panelChildForm.Add_Resize({
+        $Global:dataGridViewArenden.Width = $Global:panelChildForm.Width - 40
+        $Global:dataGridViewArenden.Height = $Global:panelChildForm.Height - 100
+    })
+
+    # Tvinga tabellen att räkna ut rätt maxbredd och maxhöjd direkt vid första uppstarten
+    $Global:dataGridViewArenden.Width = $Global:panelChildForm.Width - 40
+    $Global:dataGridViewArenden.Height = $Global:panelChildForm.Height - 100
+
+    Update-KrimsonArendenView -SupportGroup $comboBoxArendenSupportGroup.Text -Analyst $comboBoxArendenAnalyst.Text
 }
 
 function Create-FormForberedelseSteg1 {

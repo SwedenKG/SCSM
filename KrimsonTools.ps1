@@ -148,19 +148,9 @@ function Invoke-Screen {
         [string]$TitleRight
     )
     
-    # --- REGISTERMINNE: SPARA AKTIV SKÄRM UNIVERSUELLT I REGISTRET ---
-    $RegPath = "HKCU:\Software\KrimsonTools"
-    
-    # Vi sparar ENDAST skärmen om den faktiskt laddas via ett medvetet användaranrop.
-    # Vi blockerar 'Create-FormSettings' från att sparas om fönstret inte har visats än (ShowDialog),
-    # vilket förhindrar att uppstartssekvensen korrumperar minnet!
-    if ($TargetFunction -and $TargetFunction -notmatch "Create-FormLogView") {
-        if ($TargetFunction -ne "Create-FormSettings" -or ($Global:formMain -and $Global:formMain.Visible)) {
-            if (-not (Test-Path $RegPath)) { [void](New-Item -Path $RegPath -Force) }
-            Set-ItemProperty -Path $RegPath -Name "LastActiveScreen" -Value $TargetFunction -Force
-            Set-ItemProperty -Path $RegPath -Name "LastActiveScreenTitle" -Value $TitleLeft -Force
-        }
-    }
+    # #1. SPARA INSTÄLLNINGARNA FÖRST (om användaren lämnar inställningsvyn)
+    Save-KrimsonSettings
+    $Global:SettingsIsOpen = $false
 
     # #2. Rensa och frigör minnet från alla gamla kontroller så att inte ISE hänger sig
     if ($Global:panelChildForm) {
@@ -171,16 +161,44 @@ function Invoke-Screen {
         }
     }
 
-    # #3. Uppdatera rubriktexterna högst upp i gränssnittet
-    if ($Global:labelPanelTopLeft) { $Global:labelPanelTopLeft.Text = $TitleLeft }
-    if ($Global:labelPanelTopRight) { $Global:labelPanelTopRight.Text = $TitleRight }
-
-    # #4. Anropa funktionen dynamiskt baserat på namnet i strängen (t.ex. 'Create-FormArenden')
+    # #3. Anropa funktionen dynamiskt baserat på namnet i strängen (t.ex. 'Create-FormArenden')
     if (Get-Command $TargetFunction -ErrorAction SilentlyContinue) {
         Write-Host "[*] Laddar vy: $TargetFunction" -ForegroundColor Green
+        
+        # --- UNIVERSUELL REGISTERLAGRING ---
+        # Vi sparar ENDAST i registret OM funktionen faktiskt existerar och körs igång!
+        # Vi blockerar även 'Create-FormLogView' och tysta uppstarter (när fönstret inte syns än)
+        $RegPath = "HKCU:\Software\KrimsonTools"
+        if ($TargetFunction -notmatch "Create-FormLogView") {
+            if ($TargetFunction -ne "Create-FormSettings" -or ($Global:formMain -and $Global:formMain.Visible)) {
+                if (-not (Test-Path $RegPath)) { [void](New-Item -Path $RegPath -Force) }
+                Set-ItemProperty -Path $RegPath -Name "LastActiveScreen" -Value $TargetFunction -Force
+                Set-ItemProperty -Path $RegPath -Name "LastActiveScreenTitle" -Value $TitleLeft -Force
+            }
+        }
+
+        # Kör själva skärmfunktionen nu när historiken är säkrad
         & $TargetFunction
+
+        # #4. Uppdatera rubriktexterna högst upp i gränssnittet
+        if ($Global:labelPanelTopLeft) { $Global:labelPanelTopLeft.Text = $TitleLeft }
+        if ($Global:labelPanelTopRight) { $Global:labelPanelTopRight.Text = $TitleRight }
+
     } else {
         Write-Host "[X] Fel: Funktionen '$TargetFunction' kunde inte hittas i skriptet!" -ForegroundColor Red
+        
+        # --- BLANK SKÄRM-SÄKRING ---
+        # Om användaren klickar på en meny som inte är färdigbyggd än (eller rensar skärmen),
+        # så nollställer vi registret direkt! Då fattar logg-funktionen att den ska gå tillbaka
+        # till en ren, blank skärm istället för att hoppa till Settings!
+        $RegPath = "HKCU:\Software\KrimsonTools"
+        if (Test-Path $RegPath) {
+            Set-ItemProperty -Path $RegPath -Name "LastActiveScreen" -Value "" -Force
+            Set-ItemProperty -Path $RegPath -Name "LastActiveScreenTitle" -Value "" -Force
+        }
+        
+        if ($Global:labelPanelTopLeft) { $Global:labelPanelTopLeft.Text = $TitleLeft }
+        if ($Global:labelPanelTopRight) { $Global:labelPanelTopRight.Text = $TitleRight }
     }
 }
 

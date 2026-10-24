@@ -834,22 +834,17 @@ $Script:StatusMouseHandler = {
     if ($e.Clicks -eq 2) {
         $Global:toolStripStatusLabelLeft.Text = "[Triggar skärmväxling...]"
         
-        # SARA HISTORIK LIVE: Kolla var vi är precis nu innan loggen tillåts ladda
-        $isLogOpen = $Global:panelChildForm.Controls.ContainsKey("panelLogView")
-        if (-not $isLogOpen -and $Global:currentActiveScreen) {
-            $Global:PreviousActiveScreen = [PSCustomObject]@{
-                Function   = "Create-Form$($Global:currentActiveScreen)"
-                TitleLeft  = $Global:currentActiveScreen
-                TitleRight = "KrimsonTools"
-            }
+        # Spara ner din gällande rubrik i registret direkt vid klicket!
+        # Om rubriken är tom (blank skärm), nollställer vi registret så att vi hittar tillbaka dit.
+        $RegPath = "HKCU:\Software\KrimsonTools"
+        if (-not (Test-Path $RegPath)) { [void](New-Item -Path $RegPath -Force) }
+        
+        $CurrentTitle = $Global:lblTitleLeft.Text
+        if ($CurrentTitle -match "KrimsonTools|Händelselogg" -or [string]::IsNullOrWhiteSpace($CurrentTitle)) {
+            Set-ItemProperty -Path $RegPath -Name "LastActiveScreen" -Value "" -Force
         }
         
-        # Kör din inbyggda SCSM-navigering
         Toggle-KrimsonLogView
-        
-        # Säkra att grafiken hänger med omedelbart
-        $statusStrip.BringToFront()
-        $Global:formMain.Refresh()
     }
 }
 

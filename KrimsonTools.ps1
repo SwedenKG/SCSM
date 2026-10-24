@@ -150,50 +150,15 @@ function Invoke-Screen {
     
     # --- REGISTERMINNE: SPARA AKTIV SKÄRM UNIVERSUELLT I REGISTRET ---
     $RegPath = "HKCU:\Software\KrimsonTools"
+    
+    # Vi sparar ENDAST skärmen om den faktiskt laddas via ett medvetet användaranrop.
+    # Vi blockerar 'Create-FormSettings' från att sparas om fönstret inte har visats än (ShowDialog),
+    # vilket förhindrar att uppstartssekvensen korrumperar minnet!
     if ($TargetFunction -and $TargetFunction -notmatch "Create-FormLogView") {
-        if (-not (Test-Path $RegPath)) { [void](New-Item -Path $RegPath -Force) }
-        Set-ItemProperty -Path $RegPath -Name "LastActiveScreen" -Value $TargetFunction -Force
-        Set-ItemProperty -Path $RegPath -Name "LastActiveScreenTitle" -Value $TitleLeft -Force
-    }
-
-    # #1. SPARA INSTÄLLNINGARNA FÖRST (om användaren lämnar inställningsvyn)
-    Save-KrimsonSettings
-    $Global:SettingsIsOpen = $false
-
-    # --- SKOTTSÄKER HISTORIKLOGIK (Kom ihåg exakt vad som visas på skärmen) ---
-    if ($TargetFunction -eq "Create-FormLogView") {
-        $NuvarandeVy = ""
-        $HittadTitleLeft = $Global:labelPanelTopLeft.Text
-        $HittadTitleRight = $Global:labelPanelTopRight.Text
-
-        # Kontrollera vilken panel som faktiskt ligger på skärmen just nu
-        if ($Global:panelChildForm.Controls.ContainsKey("panelSettings")) { 
-            $NuvarandeVy = "Create-FormSettings" 
-            if ([string]::IsNullOrWhiteSpace($HittadTitleLeft)) { $HittadTitleLeft = "Tools" }
-            if ([string]::IsNullOrWhiteSpace($HittadTitleRight)) { $HittadTitleRight = "Configuration" }
-        }
-        elseif ($Global:panelChildForm.Controls.ContainsKey("panelArenden")) { 
-            $NuvarandeVy = "Create-FormArenden" 
-            if ([string]::IsNullOrWhiteSpace($HittadTitleLeft)) { $HittadTitleLeft = "Daily" }
-            if ([string]::IsNullOrWhiteSpace($HittadTitleRight)) { $HittadTitleRight = "Ärenden" }
-        }
-        
-        # Fallback om ingen specifik panel hittades men vi har en sparad funktion sedan tidigare
-        if ([string]::IsNullOrWhiteSpace($NuvarandeVy)) { $NuvarandeVy = $Global:CurrentActiveScreenFunction }
-
-        # Spara historiken så länge vi inte redan står i loggen
-        if ($HittadTitleLeft -ne "Händelselogg" -and -not [string]::IsNullOrWhiteSpace($NuvarandeVy)) {
-            $Global:PreviousActiveScreen = @{
-                Function   = $NuvarandeVy
-                TitleLeft  = $HittadTitleLeft
-                TitleRight = $HittadTitleRight
-            }
-            write-KrimsonLog "Historik sparad för återgång till: $NuvarandeVy ($HittadTitleLeft - $HittadTitleRight)"
-        }
-    } else {
-        # Om vi laddar en vanlig skärm (inklusive Settings), kom ihåg den funktionen till nästa gång
-        if ($TargetFunction -ne "Create-FormLogView") {
-            $Global:CurrentActiveScreenFunction = $TargetFunction
+        if ($TargetFunction -ne "Create-FormSettings" -or ($Global:formMain -and $Global:formMain.Visible)) {
+            if (-not (Test-Path $RegPath)) { [void](New-Item -Path $RegPath -Force) }
+            Set-ItemProperty -Path $RegPath -Name "LastActiveScreen" -Value $TargetFunction -Force
+            Set-ItemProperty -Path $RegPath -Name "LastActiveScreenTitle" -Value $TitleLeft -Force
         }
     }
 
@@ -890,19 +855,21 @@ function Toggle-KrimsonLogView {
         
         # Läs in exakt var användaren stod från registret
         $SavedScreen = $null
-        $SavedTitle = "Daily"
+        $SavedTitle = ""
         if (Test-Path $RegPath) {
             $SavedScreen = (Get-ItemProperty -Path $RegPath -Name "LastActiveScreen" -ErrorAction SilentlyContinue).LastActiveScreen
             $SavedTitle = (Get-ItemProperty -Path $RegPath -Name "LastActiveScreenTitle" -ErrorAction SilentlyContinue).LastActiveScreenTitle
         }
         
-        # Om vi hittade en sparad skärm, kör den direkt helt utan undantag eller hårdkodade namn!
-        if ($SavedScreen) {
+        # UNIVERSUELL ÅTERGÅNG: Kör skärmen om den finns, annars lämna arbetsytan tom (blank/svart skärm)
+        if ($SavedScreen -and $SavedScreen -ne "") {
             Invoke-Screen -TargetFunction $SavedScreen -TitleLeft $SavedTitle -TitleRight "KrimsonTools"
             Write-KrimsonLog "Stängde loggen och återvände via registerminne till: $SavedScreen"
         } else {
-            # Absolut sista panik-fallback om registret skulle vara tomt vid allra första körningen
-            Invoke-Screen -TargetFunction "Create-FormDaily" -TitleLeft "Daily" -TitleRight "KrimsonTools"
+            # Användaren lämnade appen i en blank/svart skärm innan loggen öppnades -> behåll den tom!
+            if ($Global:lblTitleLeft) { $Global:lblTitleLeft.Text = "" }
+            if ($Global:lblTitleRight) { $Global:lblTitleRight.Text = "" }
+            Write-KrimsonLog "Stängde loggen och återvände till blank skärm enligt användarens historik."
         }
         
     } else {

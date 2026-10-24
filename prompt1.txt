@@ -1,12 +1,28 @@
-Hej! Vi ska fortsätta bygga på mitt PowerShell-verktyg för Service Manager (SCSM), Cireson och Orchestrator. 
+Hej! Jag vill fortsätta utveckla mitt PowerShell WinForms-verktyg "KrimsonTools" för SCSM-hantering. Hela projektet och den absolut senaste källkoden ligger live på GitHub här: 
+https://github.com/SwedenKG/SCSM/blob/main/KrimsonTools.ps1
 
-Här är status och vad vi har gjort hittills:
-1. Vi har hittat rätt i SCSM-datastrukturen (från Runbook Activity RB via Parallel Activity PA till Service Request SR) både med SMLets och via direkta SQL-frågor.
-2. Jag har skapat ett gratis GitHub-konto (SwedenKG) och ett privat repository som heter "SCSM".
-3. I detta repository har jag laddat upp min gamla/befintliga PowerShell Windows Forms-kod (layout och funktioner).
+Här är en sammanfattning av vad vi har byggt, kommit överens om och låst fast i kodbasen:
 
-Målet för idag:
-Vi ska strukturera om min gamla kod. Vi ska baka in allt i en huvudfunktion som heter "Start-Applikation" och göra vänstermenyn helt dynamisk baserad på en variabel (PSCustomObject-array/hashtabell). Varje menyval ska automatiskt starta en funktion med samma namn.
+1. GRÄNSSNITT & DOCKNING (ZON 4)
+- Sidomenyn ($panelLeftContainer) är låst till vänster och går hela vägen från topp till botten.
+- Huvudarbetsytan ($Global:panelChildForm) ligger som en stabil bas med DockStyle.Fill och har en Padding(0, 65, 0, 0) för att förhindra att vyer hamnar under toppmenyn.
 
-Jag kommer nu att dela min befintliga kod med dig (antingen via en temporär Public-länk till mitt GitHub-repo eller genom att klistra in layout-delen här i chatten). Hjälp mig att strukturera om den enligt plan!
+2. STATUSRADEN & DOLDA KLICK-ZONEN (ZON 3 & ZON 4)
+- Statusraden ($statusStrip) är orange, ligger låst i botten (DockStyle.Bottom) och tvingas alltid längst fram (BringToFront).
+- Textfältet till vänster ($Global:toolStripStatusLabelLeft) har en fast låst storlek på 450 pixlar för att förhindra att gränssnittet hoppar när hovringstexter ändras.
+- En osynlig fjäder ($Global:toolStripStatusSpringLeft) suger upp allt utrymme i mitten. När man hovrar över mittenytan ändras texten snyggt till "[Dubbelklicka för Händelselogg]".
+- Klick-registret är flyttat till hårdvarunivå via .Add_MouseDown och lyssnar på ($e.Clicks -eq 2) över statusraden, textfältet och fjädern för 100 % klick-täckning.
 
+3. UNIVERSUELLT REGISTERMINNE (ZON 2 & ZON 4)
+- Vi använder Windows-registret (HKCU:\Software\KrimsonTools) under "LastActiveScreen" för att hålla reda på var användaren befinner sig live.
+- Navigeringsmotorn 'Invoke-Screen' sparar automatiskt den aktiva funktionen i registret i samma mikrosekund som en vy verifieras och laddas.
+- Vi har installerat en brandvägg i 'Invoke-Screen' som blockerar 'Create-FormSettings' från att sparas under den tysta uppstartssekvensen (sparar bara om fönstret faktiskt är synligt).
+- Funktionen 'Toggle-KrimsonLogView' läser av registret universellt. Om du är i Settings kommer du tillbaka till Settings. Om du är i Ärenden kommer du tillbaka till Ärenden. Om du lämnade skärmen helt blank/tom nollställs registret och du återvänder till en ren, tom skärm (ingen tvingad Settings-vy längre!).
+- Vid växling till loggen nollställs padding till (0,0,0,0) så att loggskärmen flyger hela vägen upp till toppkanten, och återställs till (0,65,0,0) vid återgång.
+
+NÄSTA STEG I DENNA SESSION: DYNAMISK HANDLÄGGARLISTA VIA SMLETS (ZON 5)
+Vi ska nu lämna huvudfönstret och statusraden helt i fred. Vi ska förflytta oss till Ärendevyn (Daily -> Ärenden) som laddas via funktionen 'Create-FormArenden'. 
+
+Vi behöver bygga en dynamiskSelectedIndexChanged-händelse på supportgrupps-comboboxen ($comboBoxArendenSupportGroup eller vad den heter inuti vyn). När användaren byter supportgrupp ska handläggar-comboboxen rensas och populeras live via SMLets (eller med simulerad testdata om verktyget körs i offline-utvecklingsläge).
+
+Hjälp mig att analysera och bygga SMLets-motorn inuti 'Create-FormArenden' utifrån koden på GitHub!

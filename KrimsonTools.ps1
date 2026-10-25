@@ -280,7 +280,7 @@ function Build-DynamicMenu {
         })
         $btnMainMenu.Add_MouseLeave({
             if ($Global:toolStripStatusLabelLeft) {
-                $Global:toolStripStatusLabelLeft.Text = ""
+                $Global:toolStripStatusLabelLeft.Text = "Redo"
             }
         })
 
@@ -325,7 +325,7 @@ function Build-DynamicMenu {
             $btnSubMenu.Add_MouseLeave({
                 $this.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
                 if ($Global:toolStripStatusLabelLeft) {
-                    $Global:toolStripStatusLabelLeft.Text = ""
+                    $Global:toolStripStatusLabelLeft.Text = "Redo"
                 }
             })
 
@@ -520,11 +520,41 @@ function Get-KrimsonSettings {
     }
 }
 
-# HUVUDFÖNSTER (Skapar själva grundskalet)
-function Create-FormMain {
+function Remove-KrimsonMemoryLeaks {
+    Write-Host "[*] Rensar minne och tar bort kvarhängande kontroller..." -ForegroundColor Yellow
     
-    $Global:PreviousActiveScreen = ""
+    # 1. Stäng och frigör huvudfönstret om det existerar
+    if ($Global:formMain -and $Global:formMain.IsDisposed -eq $false) {
+        $Global:formMain.Close()
+        $Global:formMain.Dispose()
+    }
 
+    # 2. Loopa igenom och rensa kända paneler/kontroller i Script/Global scope
+    $ControlsToDispose = @(
+        $Global:panelChildForm, 
+        $Global:panelSideMenu, 
+        $Global:toolStripStatusLabelLeft,
+        $Global:txtLogView
+    )
+
+    foreach ($Control in $ControlsToDispose) {
+        if ($Control -and $Control.IsDisposed -eq $false) {
+            $Control.Dispose()
+        }
+    }
+
+    # 3. Tvinga .NET Garbage Collector att omedelbart rensa RAM-minnet
+    [System.GC]::Collect()
+    [System.GC]::WaitForPendingFinalizers()
+    
+    Write-Host "[✓] Minnesstädning klar!" -ForegroundColor Green
+}
+
+# HUVUDFÖNSTER (Skapar själva grundskalet) 
+function Create-FormMain {
+    Remove-KrimsonMemoryLeaks
+
+    $Global:PreviousActiveScreen = ""
     # Läs miljöval från registret direkt vid start
     Get-KrimsonSettings
 
@@ -821,7 +851,6 @@ $pictureBoxLogo.BringToFront()
 
 $Global:formMain.Refresh()
 
-
 # =========================================================================================
 # HOVRINGSHÄNDELSER FÖR LOGOTYPEN
 # =========================================================================================
@@ -834,7 +863,7 @@ $pictureBoxLogo.Add_MouseEnter({
 
 $pictureBoxLogo.Add_MouseLeave({
     if ($Global:toolStripStatusLabelLeft) {
-        $Global:toolStripStatusLabelLeft.Text = ""
+        $Global:toolStripStatusLabelLeft.Text = "Redo"
         $Global:formMain.Refresh()
     }
 })
@@ -853,7 +882,15 @@ $statusStrip.Add_MouseDown($Script:StatusMouseHandler)
 $Global:toolStripStatusLabelLeft.Add_MouseDown($Script:StatusMouseHandler)
 $Global:toolStripStatusSpringLeft.Add_MouseDown($Script:StatusMouseHandler)
 
-    [void]$Global:formMain.ShowDialog()
+    # Visa fönstret inuti ett try/finally block för skottsäker hantering i ISE
+    try {
+        Write-Host "[*] Öppnar huvudfönster..." -ForegroundColor Cyan
+        [void]$Global:formMain.ShowDialog()
+    }
+    finally {
+        # Detta körs ALLTID när fönstret stängs eller när du klickar "Stopp" i ISE
+        Remove-KrimsonMemoryLeaks
+    }
 }
 
 function Toggle-KrimsonLogView {
@@ -1354,9 +1391,14 @@ function Update-KrimsonArendenView {
         [void]$newDataTable.Rows.Add($row2)
     }
 
-    # Skicka ut den nya datan till gränssnittet och tvinga tabellen att rita om sig direkt
-    $Global:dataGridViewArenden.DataSource = $newDataTable
-    $Global:dataGridViewArenden.Refresh()
+    # Skicka ut den nya datan till gränssnittet OM tabellen är skapad och aktiv
+    if ($Global:dataGridViewArenden -and $Global:dataGridViewArenden.IsDisposed -eq $false) {
+        $Global:dataGridViewArenden.DataSource = $newDataTable
+        $Global:dataGridViewArenden.Refresh()
+    }
+    else {
+        Write-KrimsonLog "VARNING: `$Global:dataGridViewArenden är inte redo eller har tagits bort från minnet!"
+    }
     
     Write-KrimsonLog "Ärendelistan har uppdaterats på skärmen."
 }
@@ -1366,6 +1408,9 @@ function Create-FormArenden {
 
     # Rensa den stora högerpanelen helt först
     $Global:panelChildForm.Controls.Clear()
+    
+    # Skapa tabellobjektet direkt så att det existerar i minnet för DataSource
+    $Global:dataGridViewArenden = New-Object System.Windows.Forms.DataGridView
 
     # =========================================================================================
     # 1. SKAPA ARBETSYTAN (Ett speglat fönster inuti panelen)
@@ -1416,7 +1461,6 @@ function Create-FormArenden {
     # =========================================================================================
     # 3. DATA GRID VIEW (Den stora ärendetabellen)
     # =========================================================================================
-    $Global:dataGridViewArenden = New-Object System.Windows.Forms.DataGridView
     $Global:dataGridViewArenden.Location = New-Object System.Drawing.Point(20, 75)
     $Global:dataGridViewArenden.Size = New-Object System.Drawing.Size(910, 490)
     $Global:dataGridViewArenden.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right

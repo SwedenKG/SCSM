@@ -1248,39 +1248,6 @@ $Global:comboMiljöer.Add_SelectedIndexChanged({
     $Global:txtLogPath.Text = $Global:LogFilePath
 }
 
-function Create-FormLogView {
-    Write-KrimsonLog "Öppnar intern händelselogg..."
-
-    $panelLogView = New-Object System.Windows.Forms.Panel
-    $panelLogView.Name = "panelLogView"
-    $panelLogView.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $panelLogView.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
-
-    # Stor, låst textruta för loggen
-    $Global:txtLogView = New-Object System.Windows.Forms.TextBox
-    $Global:txtLogView.Multiline = $true
-    $Global:txtLogView.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
-    $Global:txtLogView.Font = New-Object System.Drawing.Font("Consolas", 9.5)
-    $Global:txtLogView.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 22)
-    $Global:txtLogView.ForeColor = [System.Drawing.Color]::LightGray
-    $Global:txtLogView.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-    $Global:txtLogView.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $Global:txtLogView.ReadOnly = $true
-
-    # Hämta allt som sparats i vår StringBuilder-buffer under sessionen
-    if ($Global:LogBuffer) {
-        $Global:txtLogView.Text = $Global:LogBuffer.ToString()
-    }
-    
-    # Skrolla automatiskt ner till sista loggraden
-    $Global:txtLogView.SelectionStart = $Global:txtLogView.Text.Length
-    $Global:txtLogView.ScrollToCaret()
-
-    $panelLogView.Controls.Add($Global:txtLogView)
-    $Global:panelChildForm.Controls.Add($panelLogView)
-    $panelLogView.BringToFront()
-}
-
 function Create-FormForberedelseSteg1 {
     # 1. Skapa huvudpanelen för Release-vyn
     $panelRelease = New-Object System.Windows.Forms.Panel
@@ -1330,77 +1297,6 @@ function Create-FormForberedelseSteg1 {
 
     # Montera upp vyn i gränssnittet
     $Global:panelChildForm.Controls.Add($panelRelease)
-}
-
-function Update-KrimsonArendenView {
-    param (
-        [string]$SupportGroup,
-        [string]$Analyst
-    )
-
-    Write-KrimsonLog "Uppdaterar ärendelistan för Supportgrupp: '$SupportGroup' och Handläggare: '$Analyst'..."
-
-    # Skapa en tom datatabell med samma kolumner som gränssnittet förväntar sig
-    $newDataTable = New-Object System.Data.DataTable
-    [void]$newDataTable.Columns.Add("Ärende Nr.")
-    [void]$newDataTable.Columns.Add("Beskrivning")
-    [void]$newDataTable.Columns.Add("Startdatum")
-
-    # Kontrollera att SMLets-miljön är inläst och att vi har anslutning
-    if ($Global:SMEnvironmentLoaded -eq $true) {
-        try {
-            # --- HÄR HÄMTAR VI RIKTIG DATA VIA SMLETS ---
-            # 1. Hämta klassen för Incidenter (eller önskad ärendetyp)
-            $IncidentClass = Get-SCSMClass -Name "System.WorkItem.Incident$"
-            
-            # 2. Hämta ärenden som matchar supportgruppen (anpassa fältnamn efter er miljö om det behövs)
-            $Tickets = Get-SCSMObject -Class $IncidentClass | Where-Object { $_.TierQueue.Value -eq $SupportGroup }
-
-            foreach ($Ticket in $Tickets) {
-                # Hämta tilldelad handläggare för ärendet via relationen
-                $AssignedUser = Get-SCSMRelationshipObject -BySource $Ticket | Where-Object { $_.RelationshipId -eq "System.WorkItemAssignedToUser$" } | Select-Object -ExpandProperty TargetObject
-                $DisplayName = if ($AssignedUser) { $AssignedUser.DisplayName } else { "Unassigned" }
-
-                # Filtrera på vald handläggare om användaren inte har valt "Alla Handläggare"
-                if ($Analyst -eq "Alla Handläggare" -or $DisplayName -eq $Analyst) {
-                    $row = $newDataTable.NewRow()
-                    $row["Ärende Nr."] = $Ticket.Id
-                    $row["Beskrivning"] = $Ticket.Title
-                    $row["Startdatum"] = if ($Ticket.CreatedDate) { $Ticket.CreatedDate.ToString("yyyy-MM-dd HH:mm") } else { "" }
-                    [void]$newDataTable.Rows.Add($row)
-                }
-            }
-        }
-        catch {
-            Write-KrimsonLog "FEL: Misslyckades med att hämta live-data från SCSM: $_"
-        }
-    } else {
-        # --- RESERVLÄGE (Om skriptet körs utanför Kriminalvårdens SM-nätverk) ---
-        Write-KrimsonLog "SCSM-miljö ej tillgänglig. Genererar simulerad testdata för demonstration."
-        
-        $row1 = $newDataTable.NewRow()
-        $row1["Ärende Nr."] = "IR99542"
-        $row1["Beskrivning"] = "Lösenordsåterställning - Godstransporten"
-        $row1["Startdatum"] = (Get-Date).AddHours(-2).ToString("yyyy-MM-dd HH:mm")
-        [void]$newDataTable.Rows.Add($row1)
-
-        $row2 = $newDataTable.NewRow()
-        $row2["Ärende Nr."] = "IR99611"
-        $row2["Beskrivning"] = "Skrivarproblem på anstalten"
-        $row2["Startdatum"] = (Get-Date).AddMinutes(-30).ToString("yyyy-MM-dd HH:mm")
-        [void]$newDataTable.Rows.Add($row2)
-    }
-
-    # Skicka ut den nya datan till gränssnittet OM tabellen är skapad och aktiv
-    if ($Global:dataGridViewArenden -and $Global:dataGridViewArenden.IsDisposed -eq $false) {
-        $Global:dataGridViewArenden.DataSource = $newDataTable
-        $Global:dataGridViewArenden.Refresh()
-    }
-    else {
-        Write-KrimsonLog "VARNING: `$Global:dataGridViewArenden är inte redo eller har tagits bort från minnet!"
-    }
-    
-    Write-KrimsonLog "Ärendelistan har uppdaterats på skärmen."
 }
 
 function Create-FormArenden {
@@ -1494,7 +1390,6 @@ function Create-FormArenden {
     $Row["Beskrivning"] = "Här laddas dina live-ärenden automatiskt inom kort..."
     $Row["Startdatum"]  = (Get-Date).ToString("yyyy-MM-dd HH:mm")
     $dataTable.Rows.Add($Row)
-    $Global:dataGridViewÄrenden.DataSource = $dataTable
 
     # =========================================================================================
     # 4. MONTERA OCH VISA ELEMENTEN
@@ -1533,14 +1428,75 @@ function Create-FormArenden {
     Update-KrimsonArendenView -SupportGroup $comboBoxArendenSupportGroup.Text -Analyst $comboBoxArendenAnalyst.Text
 }
 
-function Create-FormForberedelseSteg1 {
-    $lblRelease = New-Object System.Windows.Forms.Label
-    $lblRelease.Text = "Här kommer dina releaseförberedelser och mappar (Get-ChildItem) att ligga!"
-    $lblRelease.ForeColor = [System.Drawing.Color]::White
-    $lblRelease.Font = New-Object System.Drawing.Font("Segoe UI", 12)
-    $lblRelease.Location = New-Object System.Drawing.Point(30, 30)
-    $lblRelease.AutoSize = $true
-    $Global:panelChildForm.Controls.Add($lblRelease)
+function Update-KrimsonArendenView {
+    param (
+        [string]$SupportGroup,
+        [string]$Analyst
+    )
+
+    Write-KrimsonLog "Uppdaterar ärendelistan för Supportgrupp: '$SupportGroup' och Handläggare: '$Analyst'..."
+
+    # Skapa en tom datatabell med samma kolumner som gränssnittet förväntar sig
+    $newDataTable = New-Object System.Data.DataTable
+    [void]$newDataTable.Columns.Add("Ärende Nr.")
+    [void]$newDataTable.Columns.Add("Beskrivning")
+    [void]$newDataTable.Columns.Add("Startdatum")
+
+    # Kontrollera att SMLets-miljön är inläst och att vi har anslutning
+    if ($Global:SMEnvironmentLoaded -eq $true) {
+        try {
+            # --- HÄR HÄMTAR VI RIKTIG DATA VIA SMLETS ---
+            # 1. Hämta klassen för Incidenter (eller önskad ärendetyp)
+            $IncidentClass = Get-SCSMClass -Name "System.WorkItem.Incident$"
+            
+            # 2. Hämta ärenden som matchar supportgruppen (anpassa fältnamn efter er miljö om det behövs)
+            $Tickets = Get-SCSMObject -Class $IncidentClass | Where-Object { $_.TierQueue.Value -eq $SupportGroup }
+
+            foreach ($Ticket in $Tickets) {
+                # Hämta tilldelad handläggare för ärendet via relationen
+                $AssignedUser = Get-SCSMRelationshipObject -BySource $Ticket | Where-Object { $_.RelationshipId -eq "System.WorkItemAssignedToUser$" } | Select-Object -ExpandProperty TargetObject
+                $DisplayName = if ($AssignedUser) { $AssignedUser.DisplayName } else { "Unassigned" }
+
+                # Filtrera på vald handläggare om användaren inte har valt "Alla Handläggare"
+                if ($Analyst -eq "Alla Handläggare" -or $DisplayName -eq $Analyst) {
+                    $row = $newDataTable.NewRow()
+                    $row["Ärende Nr."] = $Ticket.Id
+                    $row["Beskrivning"] = $Ticket.Title
+                    $row["Startdatum"] = if ($Ticket.CreatedDate) { $Ticket.CreatedDate.ToString("yyyy-MM-dd HH:mm") } else { "" }
+                    [void]$newDataTable.Rows.Add($row)
+                }
+            }
+        }
+        catch {
+            Write-KrimsonLog "FEL: Misslyckades med att hämta live-data från SCSM: $_"
+        }
+    } else {
+        # --- RESERVLÄGE (Om skriptet körs utanför Kriminalvårdens SM-nätverk) ---
+        Write-KrimsonLog "SCSM-miljö ej tillgänglig. Genererar simulerad testdata för demonstration."
+        
+        $row1 = $newDataTable.NewRow()
+        $row1["Ärende Nr."] = "IR99542"
+        $row1["Beskrivning"] = "Lösenordsåterställning - Godstransporten"
+        $row1["Startdatum"] = (Get-Date).AddHours(-2).ToString("yyyy-MM-dd HH:mm")
+        [void]$newDataTable.Rows.Add($row1)
+
+        $row2 = $newDataTable.NewRow()
+        $row2["Ärende Nr."] = "IR99611"
+        $row2["Beskrivning"] = "Skrivarproblem på anstalten"
+        $row2["Startdatum"] = (Get-Date).AddMinutes(-30).ToString("yyyy-MM-dd HH:mm")
+        [void]$newDataTable.Rows.Add($row2)
+    }
+
+    # Skicka ut den nya datan till gränssnittet OM tabellen är skapad och aktiv
+    if ($Global:dataGridViewArenden -and $Global:dataGridViewArenden.IsDisposed -eq $false) {
+        $Global:dataGridViewArenden.DataSource = $newDataTable
+        $Global:dataGridViewArenden.Refresh()
+    }
+    else {
+        Write-KrimsonLog "VARNING: `$Global:dataGridViewArenden är inte redo eller har tagits bort från minnet!"
+    }
+    
+    Write-KrimsonLog "Ärendelistan har uppdaterats på skärmen."
 }
 
 function Create-FormTele2 {

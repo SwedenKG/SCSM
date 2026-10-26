@@ -15,9 +15,9 @@ function Initialize-KrimsonEnvironment {
     }
 
     # Definiera absoluta sökvägar till dina lokala resurser
-    $LocalLibsPath   = Join-Path $ScriptRoot "Libs"
-    $LocalSMLetsPath = Join-Path $ScriptRoot "SMLets"
-    $TargetModule    = Join-Path $LocalSMLetsPath "SMLets.psd1"
+    $LocalLibsPath = Join-Path $ScriptRoot "SMLets"
+    $LocalSMLetsPath = $LocalLibsPath
+    $TargetModule = Join-Path $LocalSMLetsPath "SMLets.psd1"
 
     # 1. Tvinga laddning av dina specifika Service Manager DLL-filer
     $RequiredDlls = @(

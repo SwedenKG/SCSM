@@ -111,10 +111,11 @@ $Global:SQLServer   = ""
 # TargetFunction MÅSTE matcha namnet på den funktion som ritar upp just den skärmen.
 
 $Global:MenuConfig = @(
-    [PSCustomObject]@{ MainMenu = 'Daily';     SubMenu = 'Ärenden';       StatusText = 'Daily - Daglig hantering av ärenden'; TargetFunction = 'Create-FormArenden' }
-    [PSCustomObject]@{ MainMenu = 'Release';   SubMenu = 'Förberedelse'; StatusText = 'Release - Förberedelse inför release'; TargetFunction = 'Create-FormForberedelseSteg1' }
-    [PSCustomObject]@{ MainMenu = 'Statistik'; SubMenu = 'Tele2';        StatusText = 'Statistik - Analysera data från Tele2'; TargetFunction = 'Create-FormTele2' }
-    [PSCustomObject]@{ MainMenu = 'Tools';     SubMenu = 'Kontakter';     StatusText = 'Tools - Hantera interna kontakter';     TargetFunction = 'Create-FormKontakter' }
+    [PSCustomObject]@{ MainMenu = 'Daily';     SubMenu = 'Ärenden';       TargetFunction = 'Create-FormArenden';           StatusText = 'Daily - Daglig hantering av ärenden' }
+    [PSCustomObject]@{ MainMenu = 'Release';   SubMenu = 'Förberedelse';  TargetFunction = 'Create-FormForberedelseSteg1'; StatusText = 'Release - Förberedelse steg för steg' }
+    [PSCustomObject]@{ MainMenu = 'Statistik'; SubMenu = 'Tele2';         TargetFunction = 'Create-FormTele2';            StatusText = 'Statistik - Analysera Tele2-data' }
+    [PSCustomObject]@{ MainMenu = 'Tools';     SubMenu = 'Kontakter';     TargetFunction = 'Create-FormKontakter';         StatusText = 'Tools - Hantera interna kontakter' }
+    [PSCustomObject]@{ MainMenu = 'Tools';     SubMenu = 'Skapa MP';      TargetFunction = 'Create-FormSkapaMP';           StatusText = 'Tools - Skapa nytt Management Pack' }
 )
 
 # Global behållare för att hålla reda på de dynamiska undermenypanelerna
@@ -249,7 +250,7 @@ function Build-DynamicMenu {
     $MainMenus = $Global:MenuConfig | Select-Object -ExpandProperty MainMenu -Unique
 
     # Vi ritar upp menyerna nerifrån och upp (eller sätter en fast startposition)
-    $CurrentTop = 135
+    $CurrentTop = 110
 
     foreach ($MainMenu in $MainMenus) {
         # --- 1. SKAPA HUVUDKNAPP ---
@@ -260,6 +261,8 @@ function Build-DynamicMenu {
         $btnMainMenu.Location = New-Object System.Drawing.Point(0, $CurrentTop)
         $btnMainMenu.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
         $btnMainMenu.FlatAppearance.BorderSize = 0
+        $btnMainMenu.TabStop = $false
+        $btnMainMenu.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(45, 45, 60)
         $btnMainMenu.ForeColor = [System.Drawing.Color]::White
         $btnMainMenu.Font = New-Object System.Drawing.Font("Verdana", 14)
         $btnMainMenu.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
@@ -307,6 +310,7 @@ function Build-DynamicMenu {
             $btnSubMenu.Location = New-Object System.Drawing.Point(0, $SubTop)
             $btnSubMenu.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
             $btnSubMenu.FlatAppearance.BorderSize = 0
+            $btnSubMenu.TabStop = $false
             $btnSubMenu.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 190)
             $btnSubMenu.Font = New-Object System.Drawing.Font("Verdana", 14)
             $btnSubMenu.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
@@ -332,6 +336,7 @@ function Build-DynamicMenu {
             # Klick-händelse för undermenyn
             $btnSubMenu.Add_Click({
                 # Starta den dynamiska skärmen!
+                $this.Parent.Focus()
                 $Data = $this.Tag
                 Invoke-Screen -TargetFunction $Data.TargetFunction -TitleLeft $Data.MainMenu -TitleRight $Data.SubMenu
             })
@@ -355,10 +360,13 @@ function Build-DynamicMenu {
 
         # Klick-händelse för huvudmenyn (Öppna/stäng undermenyn och gör texten Orange!)
         $btnMainMenu.Add_Click({
-            $TargetPanelName = "panelSubMenu_$($this.Text.Trim())"
+            $this.Parent.Focus()
+            # Hämta ut "Daily", "Release" osv. genom att ta bort "btnMain_" från knappens namn
+            $CleanName = $this.Name.Replace("btnMain_", "")
+            $TargetPanelName = "panelSubMenu_${CleanName}"
             $TargetPanel = $Global:SubMenuPanels[$TargetPanelName]
 
-            if ($TargetPanel.Visible) {
+            if ($null -ne $TargetPanel -and $TargetPanel.Visible) {
                 $TargetPanel.Visible = $false
                 $TargetPanel.Height = 0
                 $this.ForeColor = [System.Drawing.Color]::White
@@ -638,7 +646,7 @@ AAABAAYAAAAAAAEAIAA9LgAAZgAAAICAAAABACAAKAgBAKMuAABAQAAAAQAgAChCAADLNgEAMDAAAAEA
 
     # Din logotyp-ruta (Klickbar med hand-muspekare)
     $pictureBoxLogo = New-Object System.Windows.Forms.PictureBox
-    $pictureBoxLogo.Location = New-Object System.Drawing.Point(12, 18)
+    $pictureBoxLogo.Location = New-Object System.Drawing.Point(20, 18)
     $pictureBoxLogo.BackColor = [System.Drawing.Color]::Transparent
     $pictureBoxLogo.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::AutoSize
     $pictureBoxLogo.Image = $logoImage

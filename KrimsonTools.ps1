@@ -523,6 +523,20 @@ function Refresh-ProfileDropdown {
 }
 
 function Save-KrimsonSettings {
+
+    # --- GLOBAL RELEASE-SPARNING (Körs ALLRA först innan profil-spärrarna!) ---
+    if ($Global:MatrixReleaseBoxes -and $Global:MatrixReleaseBoxes.Count -gt 0) {
+        $ReleaseRegPath = "$Global:RegPathBase\Release"
+        if (-not (Test-Path $ReleaseRegPath)) {
+            [void](New-Item -Path $ReleaseRegPath -Force)
+        }
+        foreach ($Key in $Global:MatrixReleaseBoxes.Keys) {
+            if ($Global:MatrixReleaseBoxes[$Key] -and $Global:MatrixReleaseBoxes[$Key].IsDisposed -eq $false) {
+                Set-ItemProperty -Path $ReleaseRegPath -Name $Key -Value $Global:MatrixReleaseBoxes[$Key].Text -Force
+            }
+        }
+    }
+
     # 1. Hämta namnet på den aktiva profilen just nu
     $AktivProfil = $Global:CurrentActiveProfileOnScreen
     
@@ -1535,19 +1549,6 @@ $Global:comboEnvironments.Add_SelectedIndexChanged({
                 Set-ItemProperty -Path $GamlaProfilPath -Name $Key -Value $Global:MatrixTextBoxes[$Key].Text -Force
 }
     }
-
-# SPARA ENBART OM ANVÄNDAREN FAKTISKT KLICKAT I DROPDOWNEN
-if ($Global:comboEnvironments.Focused) {
-    $ReleaseRegPath = "$Global:RegPathBase\Release"
-    if (-not (Test-Path $ReleaseRegPath)) {
-        [void](New-Item -Path $ReleaseRegPath -Force)
-    }
-    foreach ($Key in $Global:MatrixReleaseBoxes.Keys) {
-        if ($Global:MatrixReleaseBoxes[$Key] -and $Global:MatrixReleaseBoxes[$Key].IsDisposed -eq $false) {
-            Set-ItemProperty -Path $ReleaseRegPath -Name $Key -Value $Global:MatrixReleaseBoxes[$Key].Text -Force
-        }
-    }
-}
 
     Write-KrimsonLog "Autosave utfört..."
 }

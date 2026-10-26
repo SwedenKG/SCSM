@@ -250,7 +250,8 @@ function Build-DynamicMenu {
     $MainMenus = $Global:MenuConfig | Select-Object -ExpandProperty MainMenu -Unique
 
     # Vi ritar upp menyerna nerifrån och upp (eller sätter en fast startposition)
-    $CurrentTop = 110
+    $Global:MenuStartTop = 110
+    $CurrentTop = $Global:MenuStartTop
 
     foreach ($MainMenu in $MainMenus) {
         # --- 1. SKAPA HUVUDKNAPP ---
@@ -388,7 +389,7 @@ function Build-DynamicMenu {
 # ZON 3 HELP: REFRESH LAYOUT (Styr flytten av knappar helt blint utan bredd-beroende)
 # =========================================================================================
 function Refresh-MenuLayout {
-    $CurrentTop = 135
+    $CurrentTop = $Global:MenuStartTop
     $MenuOrder = @("Daily", "Release", "Statistik", "Tools")
     
     foreach ($MenuName in $MenuOrder) {

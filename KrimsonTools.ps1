@@ -460,29 +460,39 @@ function write-KrimsonLog {
 $Global:RegPath = "HKCU:\Software\KrimsonTools\Settings\MiljoProfiler"
 $Global:SCSMServer = "scsm-server.domain.local" # Standard fallback om registret är tomt
 
-# Funktion för att läsa in profiler från registret till dropdown
+# Funktion för att läsa in Miljöprofiler från registret till dropdown
 function Refresh-ProfileDropdown {
-    $Global:comboMiljöer.Items.Clear()
+    $Global:comboEnvironments.Items.Clear()
+    
+    # Läs ENDAST in de profiler som användaren faktiskt har skapat i registret
     if (Test-Path $Global:RegPath) {
         $SubKeys = Get-ChildItem -Path $Global:RegPath | Select-Object -ExpandProperty PSChildName
         foreach ($Key in $SubKeys) {
-            [void]$Global:comboMiljöer.Items.Add($Key)
+            [void]$Global:comboEnvironments.Items.Add($Key)
         }
     }
-    # Fallback om registret är helt tomt vid första start
-    if ($Global:comboMiljöer.Items.Count -eq 0) {
-        foreach ($Standard in @("Prod", "PreProd", "Test", "IT")) {
-            [void]$Global:comboMiljöer.Items.Add($Standard)
-        }
+    
+    # Om inga profiler existerar alls i registret ännu
+    if ($Global:comboEnvironments.Items.Count -eq 0) {
+        $Global:comboEnvironments.SelectedIndex = -1
+        $Global:comboEnvironments.Text = "-- Inga profiler skapade --"
+    } else {
+        $Global:comboEnvironments.SelectedIndex = -1
+        $Global:comboEnvironments.Text = "Välj Miljöprofil"
     }
-    $Global:comboMiljöer.SelectedIndex = -1
-    $Global:comboMiljöer.Text = "-- Välj Miljöprofil --"
 }
 
 function Save-KrimsonSettings {
     # 1. Hämta namnet på den aktiva profilen just nu
     $AktivProfil = $Global:CurrentActiveProfileOnScreen
-    if ([string]::IsNullOrWhiteSpace($AktivProfil) -or $AktivProfil -eq "-- Välj Miljöprofil --") { return }
+    
+    # 1. Grundläggande kontroller för tomma eller ogiltiga namn
+        if ($Global:IsDeleting -or [string]::IsNullOrWhiteSpace($AktivProfil) -or [string]::IsNullOrWhiteSpace($Global:CurrentActiveProfileOnScreen) -or $AktivProfil -eq "Välj Miljöprofil" -or $AktivProfil -eq "-- Inga profiler skapade --") { return }
+
+    # 2. TOTALSPÄRR: Om profilen inte finns kvar i dropdown-listan, TILLÅT INTE att den återskapas!
+    if ($Global:comboEnvironments -and (-not $Global:comboEnvironments.Items.Contains($AktivProfil) -or -not $Global:comboEnvironments.Items.Contains($Global:CurrentActiveProfileOnScreen))) {
+        return
+    }
 
     # SÄKERHETSSPÄRR: Om textrutorna inte finns eller är stängda, AVBRYT direkt så vi inte raderar registret!
     if (-not $Global:MatrixTextBoxes -or $Global:MatrixTextBoxes.Count -eq 0) { return }
@@ -493,7 +503,7 @@ function Save-KrimsonSettings {
 
     # Säkra sökvägen i registret för profilen
     $ProfilPath = "$($Global:RegPath)\$AktivProfil"
-    if (-not (Test-Path $ProfilPath)) { New-Item -Path $ProfilPath -Force | Out-Null }
+    if (-not (Test-Path $ProfilPath)) { return }
 
     # Loopa igenom matrisen och spara alla profilfält
     foreach ($Key in $Global:MatrixTextBoxes.Keys) {
@@ -515,8 +525,35 @@ function Save-KrimsonSettings {
         $Global:LogFilePath = $Global:txtLogFilePath.Text
     }
 
+    # =========================================================================================
+    # LIVE-UPPDATERING AV STATUSRADENS DROPDOWN NERE TILL HÖGER
+    # =========================================================================================
+    if ($Global:toolStripComboEnvironment) {
+        $CurrentSelected = $Global:toolStripComboEnvironment.SelectedItem
+        $Global:toolStripComboEnvironment.Items.Clear()
+        
+        if (Test-Path $Global:RegPath) {
+            $Profiles = Get-ChildItem -Path $Global:RegPath | Select-Object -ExpandProperty PSChildName
+            foreach ($P in $Profiles) {
+                [void]$Global:toolStripComboEnvironment.Items.Add($P)
+            }
+        }
+        
+        if ($CurrentSelected -and $Global:toolStripComboEnvironment.Items.Contains($CurrentSelected)) {
+            $Global:toolStripComboEnvironment.SelectedItem = $CurrentSelected
+        } else {
+            $Global:toolStripComboEnvironment.SelectedIndex = -1
+            $Global:toolStripComboEnvironment.Text = "Välj Miljöprofil"
+            
+            if ($Global:toolStripComboEnvironment.Control) {
+                $Global:toolStripComboEnvironment.Control.Refresh()
+            }
+        }
+    }
+
     Write-KrimsonLog "Autosave utfört: Inställningar för profilen '$AktivProfil' har sparats säkert."
 }
+
 
 # Funktion för att hämta inställningar från registret
 function Get-KrimsonSettings {
@@ -758,43 +795,60 @@ $Global:toolStripComboEnvironment.BackColor = [System.Drawing.Color]::FromArgb(4
 $Global:toolStripComboEnvironment.ForeColor = [System.Drawing.Color]::White
 $Global:toolStripComboEnvironment.Margin = New-Object System.Windows.Forms.Padding(0, 0, 5, 0)
 
-# Ladda profilerna dynamiskt från inställningsvyn
-if ($Global:comboBoxSettingsProfile -and $Global:comboBoxSettingsProfile.Items.Count -gt 0) {
-    foreach ($Item in $Global:comboBoxSettingsProfile.Items) {
-        if ($Item -notmatch "Välj Miljöprofil") {
-            [void]$Global:toolStripComboEnvironment.Items.Add($Item)
-        }
-    }
-} else {
-    [void]$Global:toolStripComboEnvironment.Items.Add("IT")
-    [void]$Global:toolStripComboEnvironment.Items.Add("PreProd")
-    [void]$Global:toolStripComboEnvironment.Items.Add("Prod")
-    [void]$Global:toolStripComboEnvironment.Items.Add("Test")
-}
+# =========================================================================================
+# LÄS IN FYSISKA PROFILER FRÅN REGISTRET TILL DROPDOWN NERE TILL HÖGER
+# =========================================================================================
 
 # --- REGISTERLOGIK FÖR ATT SPARA OCH KOMMA IHÅG MILJÖ ---
 $RegPath = "HKCU:\Software\KrimsonTools"
 
 $Global:toolStripComboEnvironment.Add_SelectedIndexChanged({
+    if ($Global:IsLoading) { return } # TOTALSPÄRR UNDER UPPSTART!
     $Global:formMain.ActiveControl = $null
     $ValdMiljo = $Global:toolStripComboEnvironment.SelectedItem.ToString()
     Write-KrimsonLog "Aktiv miljö ändrad till: $ValdMiljo"
     if (-not (Test-Path $RegPath)) { [void](New-Item -Path $RegPath -Force) }
     Set-ItemProperty -Path $RegPath -Name "LastActiveEnvironment" -Value $ValdMiljo -Force
+    if ($Global:toolStripComboEnvironment.Control -and $Global:toolStripComboEnvironment.Control.Focused) {
+        $Global:toolStripComboEnvironment.SelectionLength = 0
+    }
 })
 
-# --- LÄS FRÅN REGISTRET VID UPPSTART ---
-$LastSavedEnv = $null
-if (Test-Path $RegPath) {
-    $LastSavedEnv = (Get-ItemProperty -Path $RegPath -Name "LastActiveEnvironment" -ErrorAction SilentlyContinue).LastActiveEnvironment
-}
+    # --- 1. LÄS IN DE FAKTISKA PROFILERNA FRÅN REGISTRET FÖRST ---
+    $Global:toolStripComboEnvironment.Items.Clear()
 
-# Aktivera den sparade miljön om den finns, annars ta första i listan
-if ($LastSavedEnv -and $Global:toolStripComboEnvironment.Items.Contains($LastSavedEnv)) {
-    $Global:toolStripComboEnvironment.SelectedItem = $LastSavedEnv
-} elseif ($Global:toolStripComboEnvironment.Items.Count -gt 0) {
-    $Global:toolStripComboEnvironment.SelectedIndex = 0
-}
+    $Global:IsLoading = $true
+
+    $ProfilSokvag = "$RegPath\Settings\MiljoProfiler"
+    if (Test-Path $ProfilSokvag) {
+        $FysiskaMappar = Get-ChildItem -Path $ProfilSokvag | Select-Object -ExpandProperty PSChildName
+        foreach ($Mapp in $FysiskaMappar) {
+            [void]$Global:toolStripComboEnvironment.Items.Add($Mapp)
+        }
+    }
+
+    # --- 2. HÄMTA VILKEN PROFIL SOM VAR AKTIV SENAST ---
+    $LastSavedEnv = $null
+    if (Test-Path $RegPath) {
+        $LastSavedEnv = (Get-ItemProperty -Path $RegPath -Name "LastActiveEnvironment" -ErrorAction SilentlyContinue).LastActiveEnvironment
+    }
+
+    # --- 3. AKTIVERA RÄTT PROFIL ELLER SÄTT NEUTRAL LEDTEXT ---
+    if ($LastSavedEnv -and $Global:toolStripComboEnvironment.Items.Contains($LastSavedEnv)) {
+        $Global:toolStripComboEnvironment.SelectedItem = $LastSavedEnv
+    } elseif ($Global:toolStripComboEnvironment.Items.Count -gt 0) {
+        $Global:toolStripComboEnvironment.SelectedIndex = 0
+    } else {
+        $Global:toolStripComboEnvironment.SelectedIndex = -1
+        $Global:toolStripComboEnvironment.Text = "Välj Miljöprofil"
+    }
+
+    $Global:IsLoading = $false
+
+    # --- 4. UTPLÅNA DEN FULA LJUSBLÅ MARKERINGEN ENBART OM KONTROLLEN HAR FOKUS ---
+    if ($Global:toolStripComboEnvironment.Control -and $Global:toolStripComboEnvironment.Control.Focused) {
+        $Global:toolStripComboEnvironment.SelectionLength = 0
+    }
 
 # --- MONTERA ALLT I STATUSRADEN I EXAKT ORDNING FÖR OSYNLIG MITTENZON ---
 $statusStrip.Items.AddRange(@(
@@ -1027,14 +1081,14 @@ function Create-FormSettings {
     $lblVäljMiljö.AutoSize = $true
     $panelSettings.Controls.Add($lblVäljMiljö)
 
-    $Global:comboMiljöer = New-Object System.Windows.Forms.ComboBox
-    $Global:comboMiljöer.Location = New-Object System.Drawing.Point(180, 21) # Ändrad från 160 till 180 för perfekt linjering
-    $Global:comboMiljöer.Size = New-Object System.Drawing.Size(250, 25) # Bredden anpassad så knapparna får plats efteråt
-    $Global:comboMiljöer.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDown # Ändrad från DropDownList så du kan SKRIVA ett nytt namn!
-    $Global:comboMiljöer.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
-    $Global:comboMiljöer.ForeColor = [System.Drawing.Color]::White
-    $Global:comboMiljöer.Font = $FontFalt # Ändrad från $FontRubrik så höjden matchar fälten under
-    $panelSettings.Controls.Add($Global:comboMiljöer)
+    $Global:comboEnvironments = New-Object System.Windows.Forms.ComboBox
+    $Global:comboEnvironments.Location = New-Object System.Drawing.Point(180, 21) # Ändrad från 160 till 180 för perfekt linjering
+    $Global:comboEnvironments.Size = New-Object System.Drawing.Size(250, 25) # Bredden anpassad så knapparna får plats efteråt
+    $Global:comboEnvironments.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDown # Ändrad från DropDownList så du kan SKRIVA ett nytt namn!
+    $Global:comboEnvironments.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
+    $Global:comboEnvironments.ForeColor = [System.Drawing.Color]::White
+    $Global:comboEnvironments.Font = $FontFalt # Ändrad från $FontRubrik så höjden matchar fälten under
+    $panelSettings.Controls.Add($Global:comboEnvironments)
 
     # # Plus-KNAPP (Skapa ny profil)
     $btnPlus = New-Object System.Windows.Forms.Button
@@ -1061,40 +1115,135 @@ function Create-FormSettings {
     $btnMinus.Size = New-Object System.Drawing.Size(35, 25)
     $panelSettings.Controls.Add($btnMinus)
 
-    # --- KLICK-HÄNDELSE FÖR PLUS-KNAPPEN (SKAPA NY PROFIL) ---
-    $btnPlus.Add_Click({
-        # Ladda VB Interaction för en smidig InputBox-dialog
-        [void][System.Reflection.Assembly]::LoadWithPartialName("Microsoft.VisualBasic")
-        $NyProfil = [Microsoft.VisualBasic.Interaction]::InputBox("Ange namn på den nya miljöprofilen (t.ex. Utv, Staging, Lab):", "Skapa miljöprofil")
-        
-        if (-not [string]::IsNullOrWhiteSpace($NyProfil)) {
-            $Path = "$($Global:RegPath)\$NyProfil"
-            if (-not (Test-Path $Path)) {
-                New-Item -Path $Path -Force | Out-Null
-                Refresh-ProfileDropdown
-                $Global:comboMiljöer.SelectedItem = $NyProfil
-                [System.Windows.Forms.MessageBox]::Show("Profilen '$NyProfil' har skapats!", "Profil skapad", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-            } else {
-                [System.Windows.Forms.MessageBox]::Show("En profil med det namnet finns redan.", "Fel", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
-            }
-        }
-    })
+# --- KLICK-HÄNDELSE FÖR PLUS-KNAPPEN (SKAPA NY PROFIL) ---
+$btnPlus.Add_Click({
+    # Ladda VB Interaction för en smidig InputBox-dialog
+    [void][System.Reflection.Assembly]::LoadWithPartialName("Microsoft.VisualBasic")
+    $NyProfil = [Microsoft.VisualBasic.Interaction]::InputBox("Ange namn på den nya miljöprofilen (t.ex. Utv, Staging, Lab):", "Skapa miljöprofil")
 
-    # --- KLICK-HÄNDELSE FÖR MINUS-KNAPPEN (TA BORT VALD PROFIL) ---
-    $btnMinus.Add_Click({
-        $ValdProfil = $Global:comboMiljöer.SelectedItem
-        if ($ValdProfil) {
-            $Bekräfta = [System.Windows.Forms.MessageBox]::Show("Är du helt säker på att du vill ta bort profilen '$ValdProfil' och alla dess serverinställningar?", "Bekräfta borttagning", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
+    if (-not [string]::IsNullOrWhiteSpace($NyProfil)) {
+        $Path = "$($Global:RegPath)\$NyProfil"
+        if (-not (Test-Path $Path)) {
+            # 1. Skapa profilen fysiskt i registret
+            New-Item -Path $Path -Force | Out-Null
             
-            if ($Bekräfta -eq [System.Windows.Forms.DialogResult]::Yes) {
-                $Path = "$($Global:RegPath)\$ValdProfil"
-                if (Test-Path $Path) {
-                    Remove-Item -Path $Path -Recurse -Force
+            # 2. Uppdatera och markera i inställningsfönstrets egna rullista direkt
+            Refresh-ProfileDropdown
+            $Global:comboEnvironments.Text = [string]$NyProfil
+            $Global:comboEnvironments.SelectedItem = [string]$NyProfil
+            
+            # =========================================================================================
+            # LIVE-SYNKRONISERING: UPPDATERA DROPDOWN NERE TILL HÖGER DIREKT VID SKAPANDET
+            # =========================================================================================
+            if ($Global:toolStripComboEnvironment) {
+                # Spara undan nuvarande val innan vi rensar listan
+                $CurrentMainSelected = $Global:toolStripComboEnvironment.SelectedItem
+
+                # Töm rutan på de gamla objekten
+                $Global:toolStripComboEnvironment.Items.Clear()
+                
+                # Läs in alla fysiska mappar som faktiskt ligger i registret just nu (så att det blir rätt!)
+                if (Test-Path $Global:RegPath) {
+                    $Profiles = Get-ChildItem -Path $Global:RegPath | Select-Object -ExpandProperty PSChildName
+                    foreach ($P in $Profiles) { 
+                        [void]$Global:toolStripComboEnvironment.Items.Add($P) 
+                    }
                 }
-                Refresh-ProfileDropdown
+                
+                # ÅTERSTÄLL VALET NERE TILL HÖGER:
+                # 1. Om du redan hade en aktiv profil vald på huvudskärmen, behåll den orörd!
+                if ($CurrentMainSelected -and $Global:toolStripComboEnvironment.Items.Contains($CurrentMainSelected)) {
+                    $Global:toolStripComboEnvironment.SelectedItem = $CurrentMainSelected
+                } 
+                # 2. Om rutan var helt tom innan (Välj Miljöprofil), aktivera din nya profil direkt
+                else {
+                    $Global:toolStripComboEnvironment.SelectedItem = $NyProfil
+                }
+            } # <-- Denna stänger if ($Global:toolStripComboEnvironment) klockrent
+            
+            [System.Windows.Forms.MessageBox]::Show("Profilen '$NyProfil' har skapats!", "Profil skapad", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        } else {
+            [System.Windows.Forms.MessageBox]::Show("En profil med det namnet finns redan.", "Fel", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+        }
+    }
+})
+
+# --- KLICK-HÄNDELSE FÖR MINUS-KNAPPEN (TA BORT PROFIL) ---
+$btnMinus.Add_Click({
+    # 1. Frys namnet på profilen omedelbart innan WinForms hinner flytta fokus
+    $ProfilAttRadera = [string]$Global:comboEnvironments.SelectedItem
+
+    # Enkel och helt öppen spärr - så länge det inte är tomt eller våra fasta ledtexter så kör vi!
+    if (-not [string]::IsNullOrWhiteSpace($ProfilAttRadera) -and $ProfilAttRadera -ne "Välj Miljöprofil" -and $ProfilAttRadera -ne "-- Inga profiler skapade --") {
+        
+        $Bekräfta = [System.Windows.Forms.MessageBox]::Show("Är du helt säker på att du vill ta bort profilen '$ProfilAttRadera'?", "Bekräfta borttagning", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning)
+        
+        if ($Bekräfta -eq [System.Windows.Forms.DialogResult]::Yes) {
+            # --- STARTA TOTALBLOCKERING AV SPÖKHÄNDELSER ---
+            $Global:IsDeleting = $true
+            
+            # 2. Ta bort profilen permanent från Windows-registret
+            $Path = "$($Global:RegPath)\$ProfilAttRadera"
+            if (Test-Path $Path) {
+                Remove-Item -Path $Path -Recurse -Force
+                Write-KrimsonLog "Tog bort mappen för '$ProfilAttRadera' från registret."
+            }
+            
+            # 3. Rensa alla textrutor på skärmen live
+            foreach ($Key in $Global:MatrixTextBoxes.Keys) {
+                if ($Global:MatrixTextBoxes[$Key].IsDisposed -eq $false) {
+                    $Global:MatrixTextBoxes[$Key].Text = ""
+                }
+            }
+            
+            # 4. Uppdatera inställningsfönstrets egna rullista
+            Refresh-ProfileDropdown
+            
+            # 5. Uppdatera statusraden nere till höger live
+            if ($Global:toolStripComboEnvironment) {
+                # Kom ihåg vad som var valt i huvudfönstret innan raderingen
+                $TidigareValdMain = $Global:toolStripComboEnvironment.SelectedItem
+                
+                $Global:toolStripComboEnvironment.Items.Clear()
+                if (Test-Path $Global:RegPath) {
+                    $Profiles = Get-ChildItem -Path $Global:RegPath | Select-Object -ExpandProperty PSChildName
+                    foreach ($P in $Profiles) { 
+                        [void]$Global:toolStripComboEnvironment.Items.Add($P) 
+                    }
+                }
+                
+            # ÅTERSTÄLL VALET NERE TILL HÖGER UTIFRÅN VAD SOM RADERADES
+            if ($TidigareValdMain -and $Global:toolStripComboEnvironment.Items.Contains($TidigareValdMain)) {
+                $Global:toolStripComboEnvironment.SelectedItem = $TidigareValdMain
+            } 
+        else {
+            # 1. Töm listan och läs in ENDAST de profiler som faktiskt finns kvar i registret
+            $Global:toolStripComboEnvironment.Items.Clear()
+            if (Test-Path $Global:RegPath) {
+                $ProfilesLeft = Get-ChildItem -Path $Global:RegPath | Select-Object -ExpandProperty PSChildName
+                foreach ($P in $ProfilesLeft) { 
+                    [void]$Global:toolStripComboEnvironment.Items.Add($P) 
+                }
+            }
+            
+            # 2. Sätt index till -1 (inget valt) och tvinga gränssnittet att visa ledtexten
+            $Global:toolStripComboEnvironment.SelectedIndex = -1
+            $Global:toolStripComboEnvironment.Text = "Välj Miljöprofil"
+        
+            if ($Global:toolStripComboEnvironment.Control) {
+                $Global:toolStripComboEnvironment.Control.Refresh()
             }
         }
-    })
+            
+            # Nollställ skärmminnet helt
+            $Global:CurrentActiveProfileOnScreen = $null
+            
+            # --- AVSLUTA BLOCKERING ---
+            $Global:IsDeleting = $false
+        }
+        }
+    }
+})
 
     # 2. DEFINITION AV MATRISEN/TABELLEN FÖR SYSTEM OCH ROLLER
     $SystemMatris = @(
@@ -1159,12 +1308,15 @@ function Create-FormSettings {
     }
 
 # --- HÄNDELSEHANTERING FÖR DROPDOWN (LÄS FRÅN REGISTRET) ---
-$Global:comboMiljöer.Add_SelectedIndexChanged({
-    $NyProfil = $Global:comboMiljöer.SelectedItem
-    if ([string]::IsNullOrWhiteSpace($NyProfil) -or $NyProfil -eq "-- Välj Miljöprofil --") { return }
+$Global:comboEnvironments.Add_SelectedIndexChanged({
+    # TOTALSPÄRR: Om vi håller på att radera en profil, rör inte registret eller skärmen!
+    if ($Global:IsDeleting) { return }
+
+    $NyProfil = $Global:comboEnvironments.SelectedItem
+    if ([string]::IsNullOrWhiteSpace($NyProfil) -or $NyProfil -eq "Välj Miljöprofil") { return }
 
     # 1. KÖR AUTOSAVE PÅ DEN GAMLA PROFILEN FÖRST (Om det fanns en profil öppen på skärmen)
-    if (-not [string]::IsNullOrWhiteSpace($Global:CurrentActiveProfileOnScreen) -and $Global:CurrentActiveProfileOnScreen -ne "-- Välj Miljöprofil --") {
+    if (-not [string]::IsNullOrWhiteSpace($Global:CurrentActiveProfileOnScreen) -and $Global:CurrentActiveProfileOnScreen -ne "Välj Miljöprofil") {
         # Säkra sökvägen till den GAMLA profilen i registret innan vi rör textrutorna
         $GamlaProfilPath = "$($Global:RegPath)\$Global:CurrentActiveProfileOnScreen"
         if (-not (Test-Path $GamlaProfilPath)) { New-Item -Path $GamlaProfilPath -Force | Out-Null }
@@ -1273,8 +1425,8 @@ $Global:comboMiljöer.Add_SelectedIndexChanged({
     Refresh-ProfileDropdown
 
     # Sätt dropdownen till ett tomt neutralläge vid uppstart
-    $Global:comboMiljöer.SelectedIndex = -1
-    $Global:comboMiljöer.Text = "-- Välj Miljöprofil --"
+    $Global:comboEnvironments.SelectedIndex = -1
+    $Global:comboEnvironments.Text = "Välj Miljöprofil"
 
     # # Loggning
     $Global:chkLogEnabled.Checked = $Global:LogEnabled
@@ -1307,7 +1459,7 @@ function Create-FormForberedelseSteg1 {
     $panelRelease.Controls.Add($Global:listBoxMappar)
 
     # --- MAPPHANTERING BASERAT PÅ AKTIV PROFIL (GET-CHILDITEM) ---
-    $AktivProfil = $Global:comboMiljöer.SelectedItem
+    $AktivProfil = $Global:comboEnvironments.SelectedItem
     $MappSökväg = ""
 
     if ($AktivProfil) {

@@ -90,14 +90,6 @@ if (-not (Initialize-KrimsonEnvironment)) {
 # ZON 1: CENTRAL MENY-KONFIGURATION (Här fortsätter ditt skript...)
 # =========================================================================================
 
-# Central databas för alla dina fyra miljöer och deras tillhörande servrar
-$Global:EnvironmentConfig = @{
-    'Prod'    = [PSCustomObject]@{ SCSM = 'scsm-prod.domain.local'; Cireson = 'https://domain.local'; Orchestrator = 'orch-prod.domain.local'; SQL = 'sql-prod.domain.local' }
-    'PreProd' = [PSCustomObject]@{ SCSM = 'scsm-preprod.domain.local'; Cireson = 'https://domain.local'; Orchestrator = 'orch-pp.domain.local'; SQL = 'sql-pp.domain.local' }
-    'Test'    = [PSCustomObject]@{ SCSM = 'scsm-test.domain.local'; Cireson = 'https://domain.local'; Orchestrator = 'orch-test.domain.local'; SQL = 'sql-test.domain.local' }
-    'IT'      = [PSCustomObject]@{ SCSM = 'scsm-it.domain.local'; Cireson = 'https://domain.local'; Orchestrator = 'orch-it.domain.local'; SQL = 'sql-it.domain.local' }
-}
-
 # Standardmiljö om inget finns sparat i registret ännu
 $Global:ActiveEnvironment = 'PreProd'
 
@@ -112,7 +104,9 @@ $Global:SQLServer   = ""
 
 $Global:MenuConfig = @(
     [PSCustomObject]@{ MainMenu = 'Daily';     SubMenu = 'Ärenden';       TargetFunction = 'Create-FormArenden';           StatusText = 'Daily - Daglig hantering av ärenden' }
-    [PSCustomObject]@{ MainMenu = 'Release';   SubMenu = 'Förberedelse';  TargetFunction = 'Create-FormForberedelseSteg1'; StatusText = 'Release - Förberedelse steg för steg' }
+    [PSCustomObject]@{ MainMenu = 'Release';   SubMenu = 'Förberedelse ';  TargetFunction = 'Create-FormForberedelseSteg1'; StatusText = 'Release - Förberedelse steg för steg' }
+    [PSCustomObject]@{ MainMenu = 'Release';   SubMenu = 'Exportera';  TargetFunction = 'Create-FormExportera'; StatusText = 'Release - Export Managemenpacks' }
+    [PSCustomObject]@{ MainMenu = 'Release';   SubMenu = 'Importera';  TargetFunction = 'Create-FormImportera'; StatusText = 'Release - Import Managemenpacks' }
     [PSCustomObject]@{ MainMenu = 'Statistik'; SubMenu = 'Tele2';         TargetFunction = 'Create-FormTele2';            StatusText = 'Statistik - Analysera Tele2-data' }
     [PSCustomObject]@{ MainMenu = 'Tools';     SubMenu = 'Kontakter';     TargetFunction = 'Create-FormKontakter';         StatusText = 'Tools - Hantera interna kontakter' }
     [PSCustomObject]@{ MainMenu = 'Tools';     SubMenu = 'Skapa MP';      TargetFunction = 'Create-FormSkapaMP';           StatusText = 'Tools - Skapa nytt Management Pack' }
@@ -124,6 +118,58 @@ $Global:SubMenuPanels = @{}
 # =========================================================================================
 # ZON 2: NAVIGATIONS- OCH FÖNSTERLOGIK (Hanterar skärmbyten)
 # =========================================================================================
+
+# =========================================================================================
+# ASYNKRON RUNSPACE-MOTOR FÖR SCSM-ANROP
+# =========================================================================================
+
+function Invoke-SCSMTaskAsynchronous {
+    param(
+        [ScriptBlock]$ScriptBlock,
+        [HashTable]$ArgumentList,
+        [ScriptBlock]$OnComplete
+    )
+
+    Write-KrimsonLog "Startar asynkron SCSM-uppgift i bakgrunden..."
+
+    # 1. Skapa en ny isolerad PowerShell-instans för bakgrundstråden
+    $PowerShell = [PowerShell]::Create()
+    
+    # 2. Skicka med skriptblocket och argumenten
+    [void]$PowerShell.AddScript($ScriptBlock)
+    if ($ArgumentList) {
+        [void]$PowerShell.AddArgument($ArgumentList)
+    }
+
+    # 3. Starta tråden asynkront
+    $AsyncResult = $PowerShell.BeginInvoke()
+
+    # 4. Starta en WinForms-timer som kollar när tråden är klar utan att frysa GUI
+    $Timer = New-Object System.Windows.Forms.Timer
+    $Timer.Interval = 200 # Kolla 5 gånger i sekunden
+    
+    $Timer.Add_Tick({
+        if ($AsyncResult.IsCompleted) {
+            $Timer.Stop()
+            $Timer.Dispose()
+            
+            # Hämta datan som bakgrundstråden producerade
+            $Data = $PowerShell.EndInvoke($AsyncResult)
+            
+            # Stäng ner tråden säkert för att förhindra minnesläckor
+            $PowerShell.Dispose()
+            
+            Write-KrimsonLog "Bakgrundsfrågan mot SCSM slutfördes framgångsrikt."
+            
+            # Kör OnComplete-blocket i huvudtråden och skicka med datan
+            if ($OnComplete) {
+                & $OnComplete $Data
+            }
+        }
+    })
+    
+    $Timer.Start()
+}
 
 # Funktion för att dölja alla undermenyer och återställa knappfärger i sidomenyn
 function Close-AllSubMenus {
@@ -1702,6 +1748,30 @@ function Create-FormKontakter {
     $lblKontakter.Location = New-Object System.Drawing.Point(30, 30)
     $lblKontakter.AutoSize = $true
     $Global:panelChildForm.Controls.Add($lblKontakter)
+}
+
+function Create-FormExportera {
+Write-KrimsonLog "Initierar arbetsytan för Exportera Management Packs..."
+
+# 1. Skapa en huvudbehållare för hela denna skärmen
+$panelExportera = New-Object System.Windows.Forms.Panel
+$panelExportera.Name = "panelExportera"
+$panelExportera.Dock = [System.Windows.Forms.DockStyle]::Fill
+$panelExportera.BackColor = [System.Drawing.Color]::FromArgb(31, 31, 43)
+
+# 2. Lägg till en test-etikett så du ser att vyn laddas korrekt i det svarta fönstret
+$lblTest = New-Object System.Windows.Forms.Label
+$lblTest.Text = "Management Pack Exporter – Master Professional (Kommer snart)"
+$lblTest.Font = New-Object System.Drawing.Font("Verdana", 12, [System.Drawing.FontStyle]::Bold)
+$lblTest.ForeColor = [System.Drawing.Color]::White
+$lblTest.Location = New-Object System.Drawing.Point(20, 20)
+#$lblTest.AutoSize = true
+$panelExportera.Controls.Add($lblTest)
+
+# 3. Montera behållaren på din globala arbetsyta (panelChildForm)
+$Global:panelChildForm.Controls.Add($panelExportera)
+$panelExportera.BringToFront()
+Write-KrimsonLog "Arbetsytan för Exportera har laddats framgångsrikt."
 }
 
 # Starta applikationen och visa fönstret!

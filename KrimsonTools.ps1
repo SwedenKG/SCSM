@@ -696,27 +696,6 @@ function Remove-KrimsonMemoryLeaks {
     Write-Host "[✓] Minnesstädning klar!" -ForegroundColor Green
 }
 
-function Load-KrimsonEnvironmentVariables {
-    # 1. Hämta den aktiva miljöprofilen från statusradens dropdown
-    $ActiveProfile = $Global:toolStripComboEnvironment.SelectedItem
-    if ([string]::IsNullOrWhiteSpace($ActiveProfile) -or $ActiveProfile -eq "Välj Miljöprofil") {
-        return
-    }
-
-    $ProfilPath = "$($Global:RegPath)\$ActiveProfile"
-    if (Test-Path $ProfilPath) {
-        $RegData = Get-ItemProperty -Path $ProfilPath -ErrorAction SilentlyContinue
-        
-        # 2. Sätt variablerna i global scope live baserat på registernycklarna i profilen
-        $Global:SCSMServer  = $RegData.SCSMServer
-        $Global:CiresonURL  = $RegData.CiresonURL
-        $Global:OrchServer  = $RegData.OrchServer
-        $Global:SQLServer   = $RegData.SQLServer
-
-        write-KrimsonLog "Miljövariabler uppdaterade i minnet för profil: '$ActiveProfile' (Server: $Global:SCSMServer)"
-    }
-}
-
 # HUVUDFÖNSTER (Skapar själva grundskalet) 
 function Create-FormMain {
     Remove-KrimsonMemoryLeaks
@@ -1550,6 +1529,7 @@ $Global:comboEnvironments.Add_SelectedIndexChanged({
                 Set-ItemProperty -Path $GamlaProfilPath -Name $Key -Value $Global:MatrixTextBoxes[$Key].Text -Force
 }
     }
+
     # SPARA GLOBALA RELEASE-INSTÄLLNINGAR VID PROFILBYTE
     $ReleaseRegPath = "$Global:RegPathBase\Release"
     if (-not (Test-Path $ReleaseRegPath)) {
@@ -1560,6 +1540,7 @@ $Global:comboEnvironments.Add_SelectedIndexChanged({
             Set-ItemProperty -Path $ReleaseRegPath -Name $Key -Value $Global:MatrixReleaseBoxes[$Key].Text -Force
         }
     }
+
     Write-KrimsonLog "Autosave utfört..."
 }
 

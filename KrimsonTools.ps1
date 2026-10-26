@@ -647,8 +647,14 @@ function Load-KrimsonEnvironmentVariables {
 
         write-KrimsonLog "Samtliga miljövariabler inlästa i minnet för profil: '$ActiveProfile' (SCSM Server: $Global:SCSMServer)"
     }
+    # Läs in de globala Release-inställningarna till minnesvariabler direkt vid profilbyte
+    $ReleaseRegPath = "$Global:RegPathBase\Release"
+    if (Test-Path $ReleaseRegPath) {
+        $RegObj = Get-Item -Path $ReleaseRegPath -ErrorAction SilentlyContinue
+        $Global:MPSource = $RegObj.GetValue("MP_Source", "")
+        $Global:MPTarget = $RegObj.GetValue("MP_Target", "")
+    }
 }
-
 
 # Funktion för att hämta inställningar från registret
 function Get-KrimsonSettings {
@@ -1530,7 +1536,8 @@ $Global:comboEnvironments.Add_SelectedIndexChanged({
 }
     }
 
-    # SPARA GLOBALA RELEASE-INSTÄLLNINGAR VID PROFILBYTE
+# SPARA ENBART OM ANVÄNDAREN FAKTISKT KLICKAT I DROPDOWNEN
+if ($Global:comboEnvironments.Focused) {
     $ReleaseRegPath = "$Global:RegPathBase\Release"
     if (-not (Test-Path $ReleaseRegPath)) {
         [void](New-Item -Path $ReleaseRegPath -Force)
@@ -1540,6 +1547,7 @@ $Global:comboEnvironments.Add_SelectedIndexChanged({
             Set-ItemProperty -Path $ReleaseRegPath -Name $Key -Value $Global:MatrixReleaseBoxes[$Key].Text -Force
         }
     }
+}
 
     Write-KrimsonLog "Autosave utfört..."
 }
@@ -1573,15 +1581,16 @@ $Global:comboEnvironments.Add_SelectedIndexChanged({
         }
     }
 
-        # Läs in globala release-data igen på ett skottsäkert sätt via GetValue efter profilbyte
-        $ReleaseRegPath = "$Global:RegPathBase\Release"
-        if (Test-Path $ReleaseRegPath) {
-            $RegObj = Get-Item -Path $ReleaseRegPath -ErrorAction SilentlyContinue
-            foreach ($Key in $Global:MatrixReleaseBoxes.Keys) {
-                $SparatVarde = $RegObj.GetValue($Key, "")
-                if (-not [string]::IsNullOrWhiteSpace($SparatVarde)) {
-                    $Global:MatrixReleaseBoxes[$Key].Text = $SparatVarde
-                }
+        # Läs in miljövariablerna live till minnet först (Kör din nya logik på rad 609!)
+        Load-KrimsonEnvironmentVariables
+
+        # Om användaren står inne på inställningsskärmen just nu, uppdatera rutorna live!
+        if ($Global:MatrixReleaseBoxes -and $Global:MatrixReleaseBoxes.Count -gt 0) {
+            if ($Global:MatrixReleaseBoxes["MP_Source"] -and $Global:MatrixReleaseBoxes["MP_Source"].IsDisposed -eq $false) {
+                $Global:MatrixReleaseBoxes["MP_Source"].Text = $Global:MPSource
+            }
+            if ($Global:MatrixReleaseBoxes["MP_Target"] -and $Global:MatrixReleaseBoxes["MP_Target"].IsDisposed -eq $false) {
+                $Global:MatrixReleaseBoxes["MP_Target"].Text = $Global:MPTarget
             }
         }
 })

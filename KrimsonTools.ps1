@@ -90,15 +90,6 @@ if (-not (Initialize-KrimsonEnvironment)) {
 # ZON 1: CENTRAL MENY-KONFIGURATION (Här fortsätter ditt skript...)
 # =========================================================================================
 
-# Standardmiljö om inget finns sparat i registret ännu
-$Global:ActiveEnvironment = 'PreProd'
-
-# Dynamiska variabler som uppdateras automatiskt baserat på vald miljö
-$Global:SCSMServer  = ""
-$Global:CiresonURL  = ""
-$Global:OrchServer  = ""
-$Global:SQLServer   = ""
-
 # Här lägger du till nya rader i framtiden om du vill utöka menyn. 
 # TargetFunction MÅSTE matcha namnet på den funktion som ritar upp just den skärmen.
 
@@ -111,6 +102,10 @@ $Global:MenuConfig = @(
     [PSCustomObject]@{ MainMenu = 'Tools';     SubMenu = 'Kontakter';     TargetFunction = 'Create-FormKontakter';         StatusText = 'Tools - Hantera interna kontakter' }
     [PSCustomObject]@{ MainMenu = 'Tools';     SubMenu = 'Skapa MP';      TargetFunction = 'Create-FormSkapaMP';           StatusText = 'Tools - Skapa nytt Management Pack' }
 )
+
+$Global:MatrixReleaseBoxes = @{}
+$Global:RegPathBase = "HKCU:\Software\KrimsonTools\Settings"
+$Global:RegPath     = "$Global:RegPathBase\MiljoProfiler"
 
 # Global behållare för att hålla reda på de dynamiska undermenypanelerna
 $Global:SubMenuPanels = @{}
@@ -504,7 +499,6 @@ function write-KrimsonLog {
 }
 
 $Global:RegPath = "HKCU:\Software\KrimsonTools\Settings\MiljoProfiler"
-$Global:SCSMServer = "scsm-server.domain.local" # Standard fallback om registret är tomt
 
 # Funktion för att läsa in Miljöprofiler från registret till dropdown
 function Refresh-ProfileDropdown {
@@ -597,7 +591,62 @@ function Save-KrimsonSettings {
         }
     }
 
+    # # Spara globala release-inställningar till HKCU:\Software\KrimsonTools\Release
+    $ReleaseRegPath = "$Global:RegPathBase\Release"
+    if (-not (Test-Path $ReleaseRegPath)) {
+        [void](New-Item -Path $ReleaseRegPath -Force)
+    }
+
+    foreach ($Key in $Global:MatrixReleaseBoxes.Keys) {
+        if ($Global:MatrixReleaseBoxes[$Key] -and $Global:MatrixReleaseBoxes[$Key].IsDisposed -eq $false) {
+            Set-ItemProperty -Path $ReleaseRegPath -Name $Key -Value $Global:MatrixReleaseBoxes[$Key].Text -Force
+        }
+    }
+
     Write-KrimsonLog "Autosave utfört: Inställningar för profilen '$AktivProfil' har sparats säkert."
+}
+
+function Load-KrimsonEnvironmentVariables {
+    # 1. Hämta den aktiva miljöprofilen från statusradens dropdown
+    $ActiveProfile = $Global:toolStripComboEnvironment.SelectedItem
+    if ([string]::IsNullOrWhiteSpace($ActiveProfile) -or $ActiveProfile -eq "Välj Miljöprofil") {
+        return
+    }
+
+    $ProfilPath = "$($Global:RegPath)\$ActiveProfile"
+    if (Test-Path $ProfilPath) {
+        $RegData = Get-ItemProperty -Path $ProfilPath -ErrorAction SilentlyContinue
+        
+        # 2. Läs in PRECIS ALLA variabler i helt rena globala namn baserat på ditt register!
+        # SCSM-sektionen
+        $Global:SCSMServer       = $RegData.SCSM_Server
+        $Global:SCSMSQL          = $RegData.SCSM_SQL
+        $Global:SCSMDB           = $RegData.SCSM_DB
+
+        # Cireson-sektionen
+        $Global:CiresonWeb       = $RegData.Cireson_Web
+        $Global:CiresonSQL       = $RegData.Cireson_SQL
+        $Global:CiresonDB        = $RegData.Cireson_DB
+        $Global:CiresonCache     = $RegData.Cireson_Cache
+
+        # Analytics-sektionen
+        $Global:AnalyticsSQL     = $RegData.Analytics_SQL
+        $Global:AnalyticsDB      = $RegData.Analytics_DB
+
+        # DataWarehouse-sektionen
+        $Global:DWServer         = $RegData.DW_Server
+        $Global:DWSQL            = $RegData.DW_SQL
+        $Global:DWRepoDB         = $RegData.DW_Repo_DB
+        $Global:DWStageDB        = $RegData.DW_Stage_DB
+        $Global:DWMartDB         = $RegData.DW_Mart_DB
+
+        # Orchestrator-sektionen
+        $Global:OrcServer        = $RegData.Orc_Server
+        $Global:OrcSQL           = $RegData.Orc_SQL
+        $Global:OrcDB            = $RegData.Orc_DB
+
+        write-KrimsonLog "Samtliga miljövariabler inlästa i minnet för profil: '$ActiveProfile' (SCSM Server: $Global:SCSMServer)"
+    }
 }
 
 
@@ -645,6 +694,27 @@ function Remove-KrimsonMemoryLeaks {
     [System.GC]::WaitForPendingFinalizers()
     
     Write-Host "[✓] Minnesstädning klar!" -ForegroundColor Green
+}
+
+function Load-KrimsonEnvironmentVariables {
+    # 1. Hämta den aktiva miljöprofilen från statusradens dropdown
+    $ActiveProfile = $Global:toolStripComboEnvironment.SelectedItem
+    if ([string]::IsNullOrWhiteSpace($ActiveProfile) -or $ActiveProfile -eq "Välj Miljöprofil") {
+        return
+    }
+
+    $ProfilPath = "$($Global:RegPath)\$ActiveProfile"
+    if (Test-Path $ProfilPath) {
+        $RegData = Get-ItemProperty -Path $ProfilPath -ErrorAction SilentlyContinue
+        
+        # 2. Sätt variablerna i global scope live baserat på registernycklarna i profilen
+        $Global:SCSMServer  = $RegData.SCSMServer
+        $Global:CiresonURL  = $RegData.CiresonURL
+        $Global:OrchServer  = $RegData.OrchServer
+        $Global:SQLServer   = $RegData.SQLServer
+
+        write-KrimsonLog "Miljövariabler uppdaterade i minnet för profil: '$ActiveProfile' (Server: $Global:SCSMServer)"
+    }
 }
 
 # HUVUDFÖNSTER (Skapar själva grundskalet) 
@@ -1293,29 +1363,49 @@ $btnMinus.Add_Click({
 
     # 2. DEFINITION AV MATRISEN/TABELLEN FÖR SYSTEM OCH ROLLER
     $SystemMatris = @(
-        @{ System = "SCSM";         Roll = "Server";    Desc = "SCSM Management Servrar" }
-        @{ System = "SCSM";         Roll = "SQL"; Desc = "SCSM SQL Server / Instans" }
-        @{ System = "SCSM";         Roll = "DB";    Desc = "SCSM Databasnamn" }
-        @{ System = "Cireson";      Roll = "Web";    Desc = "Cireson Portal Webbservrar" }
-        @{ System = "Cireson";      Roll = "SQL"; Desc = "Cireson SQL Server" }
-        @{ System = "Cireson";      Roll = "DB";    Desc = "Cireson Portal Databasnamn" }
-        @{ System = "Cireson";      Roll = "Cache";  Desc = "Cireson Cache Builder Server" }
-        @{ System = "Analytics";    Roll = "SQL";    Desc = "Cireson Analytics SQL Server" }
-        @{ System = "Analytics";    Roll = "DB";     Desc = "Cireson Analytics Databasnamn" }
-        @{ System = "DW";           Roll = "Server";    Desc = "DataWarehouse Management Server" }
-        @{ System = "DW";           Roll = "SQL"; Desc = "DataWarehouse SQL Server" }
-        @{ System = "DW";           Roll = "Repo DB"; Desc = "DataWarehouse Repository Databasnamn" }
-        @{ System = "DW";           Roll = "Stage DB";Desc = "DataWarehouse Staging and Config Databasnamn" }
-        @{ System = "DW";           Roll = "Mart DB"; Desc = "DataWarehouse DataMart Databasnamn" }
-        @{ System = "Orc";          Roll = "Server";    Desc = "Orchestrator Runbook Server / Web Service URL" }
-        @{ System = "Orc";          Roll = "SQL"; Desc = "Orchestrator SQL Server" }
-        @{ System = "Orc";          Roll = "DB";    Desc = "Orchestrator Databasnamn" }
+        @{ System = "SCSM";        Roll = "Server";    Desc = "SCSM Management Servrar" }
+        @{ System = "SCSM";        Roll = "SQL";       Desc = "SCSM SQL Server / Instans" }
+        @{ System = "SCSM";        Roll = "DB";        Desc = "SCSM Databasnamn" }
+        @{ System = "Cireson";     Roll = "Web";       Desc = "Cireson Portal Webbservrar" }
+        @{ System = "Cireson";     Roll = "URL";       Desc = "Cireson Web Service URL" }
+        @{ System = "Cireson";     Roll = "SQL";       Desc = "Cireson SQL Server" }
+        @{ System = "Cireson";     Roll = "DB";        Desc = "Cireson Portal Databasnamn" }
+        @{ System = "Cireson";     Roll = "Cache";     Desc = "Cireson Cache Builder Server" }
+        @{ System = "Analytics";   Roll = "SQL";       Desc = "Cireson Analytics SQL Server" }
+        @{ System = "Analytics";   Roll = "DB";        Desc = "Cireson Analytics Databasnamn" }
+        @{ System = "DW";          Roll = "Server";    Desc = "DataWarehouse Management Server" }
+        @{ System = "DW";          Roll = "SQL";       Desc = "DataWarehouse SQL Server" }
+        @{ System = "DW";          Roll = "Repo DB";   Desc = "DataWarehouse Repository Databasnamn" }
+        @{ System = "DW";          Roll = "Stage DB";  Desc = "DataWarehouse Staging and Config Databasnamn" }
+        @{ System = "DW";          Roll = "Mart DB";   Desc = "DataWarehouse DataMart Databasnamn" }
+        @{ System = "Orc";         Roll = "Server";    Desc = "Orchestrator Runbook Server" }
+        @{ System = "Orc";         Roll = "URL";       Desc = "Orchestrator Web Service URL" }
+        @{ System = "Orc";         Roll = "SQL";       Desc = "Orchestrator SQL Server" }
+        @{ System = "Orc";         Roll = "DB";        Desc = "Orchestrator Databasnamn" }
     )
 
     # --- DYNAMISK GENERERING AV MATRISEN ---
+
+    $panelSettings.Width = $Global:panelChildForm.Width
+    $panelSettings.Height = $Global:panelChildForm.Height
+    $panelSettings.Anchor = [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom
+
     $CurrentTop = 85
 
     foreach ($Rad in $SystemMatris) {
+        # Rita ut orange sektionsrubrik dynamiskt om det finns angivet i matrisen
+        if ($Rad.GroupHeader) {
+            $CurrentTop += 15 # Extra mellanrum före rubriken
+            $lblGroup = New-Object System.Windows.Forms.Label
+            $lblGroup.Text = $Rad.GroupHeader
+            $lblGroup.Font = New-Object System.Drawing.Font("Verdana", 10, [System.Drawing.FontStyle]::Bold)
+            $lblGroup.ForeColor = [System.Drawing.Color]::FromArgb(255, 140, 0) # Kriminalvårdens Orange
+            $lblGroup.Location = New-Object System.Drawing.Point(30, $CurrentTop)
+            $lblGroup.Size = New-Object System.Drawing.Size(400, 25)
+            $panelSettings.Controls.Add($lblGroup)
+            $CurrentTop += 30 # Flytta ner för att ge plats åt fälten under
+        }
+
         # Skapa en unik identifierare (t.ex. SCSM_Server, SCSM_SQLServer...)
         $KeyName = "$($Rad.System)_$($Rad.Roll)"
 
@@ -1330,13 +1420,16 @@ $btnMinus.Add_Click({
 
         # Inmatningsbox (Mittenkolumnen - breddad för kommatecken)
         $txtFalt = New-Object System.Windows.Forms.TextBox
-        $txtFalt.Anchor = [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Top
-        $txtFalt.Font = $FontFalt
         $txtFalt.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
-        $txtFalt.ForeColor = [System.Drawing.Color]::White
         $txtFalt.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+        # Gemensamma egenskaper för både TextBox och ComboBox
+        $txtFalt.Anchor = [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+        $txtFalt.Font = $FontFalt
+        $txtFalt.ForeColor = [System.Drawing.Color]::White
         $txtFalt.Location = New-Object System.Drawing.Point(180, $CurrentTop)
-        $txtFalt.Size = New-Object System.Drawing.Size(340, 23)
+        $DynamicWidth = $Global:panelChildForm.Width - 180 - 470
+        $txtFalt.Size = New-Object System.Drawing.Size($DynamicWidth, 23)
         $panelSettings.Controls.Add($txtFalt)
         $Global:MatrixTextBoxes[$KeyName] = $txtFalt
 
@@ -1345,9 +1438,93 @@ $btnMinus.Add_Click({
         $lblDesc.Text = $Rad.Desc
         $lblDesc.Font = $FontFalt
         $lblDesc.ForeColor = [System.Drawing.Color]::Gray
-        $lblDesc.Location = New-Object System.Drawing.Point(540, ($CurrentTop + 3))
+        $lblDesc.Location = New-Object System.Drawing.Point(($Global:panelChildForm.Width - 430), ($CurrentTop + 3))
         $lblDesc.Size = New-Object System.Drawing.Size(400, 20)
-        $lblDesc.Anchor = [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Top
+        $lblDesc.Anchor = [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Top
+        $panelSettings.Controls.Add($lblDesc)
+
+        $CurrentTop += 28
+    }
+
+    # =========================================================================
+    # RELEASE - MANAGEMENTPACKS (GLOBAL SEKTION)
+    # =========================================================================
+
+    # Sätt banan till den nya globala release-nyckeln under Settings (RegPath)
+    $ReleaseRegPath = "$Global:RegPathBase\Release"
+    
+    # Skapa nyckeln i registret om den inte redan finns
+    if (-not (Test-Path $ReleaseRegPath)) {
+        [void](New-Item -Path $ReleaseRegPath -Force)
+    }
+
+    $CurrentTop += 30 # Skapa ett snyggt avstånd från miljöprofilerna
+
+    # 1. Definiera din helt egna Release-matris (Här kan du fylla på med fler fält sen!)
+    $ReleaseMatris = @(
+        @{ System = "MP"; Roll = "Source"; Desc = "Miljöprofil att Exportera  MP's"; GroupHeader = "Release - Managementpacks" }
+        @{ System = "MP"; Roll = "Target"; Desc = "Miljöprofil att Importera  MP's" }
+    )
+
+    # 2. Loopa igenom Release-matrisen för att rita ut fälten
+    foreach ($Rad in $ReleaseMatris) {
+        
+        # Rita ut din Orangea rubrik för Release
+        if ($Rad.GroupHeader) {
+            $CurrentTop += 15
+            $lblGroup = New-Object System.Windows.Forms.Label
+            $lblGroup.Text = $Rad.GroupHeader
+            $lblGroup.Font = New-Object System.Drawing.Font("Verdana", 10, [System.Drawing.FontStyle]::Bold)
+            $lblGroup.ForeColor = [System.Drawing.Color]::FromArgb(255, 140, 0)
+            $lblGroup.Location = New-Object System.Drawing.Point(30, $CurrentTop)
+            $lblGroup.Size = New-Object System.Drawing.Size(400, 25)
+            $panelSettings.Controls.Add($lblGroup)
+            $CurrentTop += 30
+        }
+
+        $KeyName = "$($Rad.System)_$($Rad.Roll)"
+
+        # Textetikett (Vänsterkolumn)
+        $lblFalt = New-Object System.Windows.Forms.Label
+        $lblFalt.Text = "$($Rad.System) $($Rad.Roll):"
+        $lblFalt.Font = $FontEtikett
+        $lblFalt.ForeColor = [System.Drawing.Color]::White
+        $lblFalt.Location = New-Object System.Drawing.Point(30, ($CurrentTop + 3))
+        $lblFalt.Size = New-Object System.Drawing.Size(140, 20)
+        $panelSettings.Controls.Add($lblFalt)
+
+        # Inmatningsbox (Mittenkolumn)
+        $txtFalt = New-Object System.Windows.Forms.TextBox
+        $txtFalt.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
+        $txtFalt.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+        $txtFalt.Anchor = [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+        $txtFalt.Font = $FontFalt
+        $txtFalt.ForeColor = [System.Drawing.Color]::White
+        $txtFalt.Location = New-Object System.Drawing.Point(180, $CurrentTop)
+        $DynamicWidth = $Global:panelChildForm.Width - 180 - 470
+        $txtFalt.Size = New-Object System.Drawing.Size($DynamicWidth, 23)
+        $panelSettings.Controls.Add($txtFalt)
+        
+        # Hämta sparade värden direkt och säkert från registernyckeln via Windows API (.GetValue)
+        if (Test-Path $ReleaseRegPath) {
+            $RegObj = Get-Item -Path $ReleaseRegPath -ErrorAction SilentlyContinue
+            $SparatVarde = $RegObj.GetValue($KeyName, "")
+            if (-not [string]::IsNullOrWhiteSpace($SparatVarde)) {
+                $txtFalt.Text = $SparatVarde
+            }
+        }
+
+        # Spara i en helt egen Global matris för Release-kontroller så de inte töms vid miljöbyte!
+        $Global:MatrixReleaseBoxes[$KeyName] = $txtFalt
+
+        # Förklarande hjälptext (Högerkolumn)
+        $lblDesc = New-Object System.Windows.Forms.Label
+        $lblDesc.Text = $Rad.Desc
+        $lblDesc.Font = $FontFalt
+        $lblDesc.ForeColor = [System.Drawing.Color]::Gray
+        $lblDesc.Location = New-Object System.Drawing.Point(($Global:panelChildForm.Width - 430), ($CurrentTop + 3))
+        $lblDesc.Size = New-Object System.Drawing.Size(400, 20)
+        $lblDesc.Anchor = [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Top
         $panelSettings.Controls.Add($lblDesc)
 
         $CurrentTop += 28
@@ -1371,10 +1548,20 @@ $Global:comboEnvironments.Add_SelectedIndexChanged({
         foreach ($Key in $Global:MatrixTextBoxes.Keys) {
             if ($Global:MatrixTextBoxes[$Key] -and $Global:MatrixTextBoxes[$Key].IsDisposed -eq $false) {
                 Set-ItemProperty -Path $GamlaProfilPath -Name $Key -Value $Global:MatrixTextBoxes[$Key].Text -Force
-            }
-        }
-        Write-KrimsonLog "Autosave utfört: Sparade den lämnade profilen '$Global:CurrentActiveProfileOnScreen' i registret."
+}
     }
+    # SPARA GLOBALA RELEASE-INSTÄLLNINGAR VID PROFILBYTE
+    $ReleaseRegPath = "$Global:RegPathBase\Release"
+    if (-not (Test-Path $ReleaseRegPath)) {
+        [void](New-Item -Path $ReleaseRegPath -Force)
+    }
+    foreach ($Key in $Global:MatrixReleaseBoxes.Keys) {
+        if ($Global:MatrixReleaseBoxes[$Key] -and $Global:MatrixReleaseBoxes[$Key].IsDisposed -eq $false) {
+            Set-ItemProperty -Path $ReleaseRegPath -Name $Key -Value $Global:MatrixReleaseBoxes[$Key].Text -Force
+        }
+    }
+    Write-KrimsonLog "Autosave utfört..."
+}
 
     # 2. UPPDATERA MINNESVARIABELN TILL DEN NYA PROFILEN
     $Global:CurrentActiveProfileOnScreen = $NyProfil
@@ -1382,7 +1569,11 @@ $Global:comboEnvironments.Add_SelectedIndexChanged({
 
     # 3. Töm alla fält på skärmen inför laddningen
     foreach ($Key in $Global:MatrixTextBoxes.Keys) {
-        $Global:MatrixTextBoxes[$Key].Text = ""
+        if ($Global:MatrixTextBoxes[$Key] -is [System.Windows.Forms.ComboBox]) {
+            $Global:MatrixTextBoxes[$Key].SelectedIndex = -1
+        } else {
+            $Global:MatrixTextBoxes[$Key].Text = ""
+        }
     }
 
     # 4. Läs in värdena från registret för den NYA profilen
@@ -1390,10 +1581,28 @@ $Global:comboEnvironments.Add_SelectedIndexChanged({
         foreach ($Key in $Global:MatrixTextBoxes.Keys) {
             $Varde = Get-ItemProperty -Path $Path -Name $Key -ErrorAction SilentlyContinue
             if ($Varde -and $Varde.$Key) {
-                $Global:MatrixTextBoxes[$Key].Text = $Varde.$Key
+                # Om kontrollen är en Dropdown (ComboBox), sätt SelectedItem
+                if ($Global:MatrixTextBoxes[$Key] -is [System.Windows.Forms.ComboBox]) {
+                    $Global:MatrixTextBoxes[$Key].SelectedItem = $Varde.$Key
+                } else {
+                    # Annars sätter vi .Text som vanligt för vanliga textrutor
+                    $Global:MatrixTextBoxes[$Key].Text = $Varde.$Key
+                }
             }
         }
     }
+
+        # Läs in globala release-data igen på ett skottsäkert sätt via GetValue efter profilbyte
+        $ReleaseRegPath = "$Global:RegPathBase\Release"
+        if (Test-Path $ReleaseRegPath) {
+            $RegObj = Get-Item -Path $ReleaseRegPath -ErrorAction SilentlyContinue
+            foreach ($Key in $Global:MatrixReleaseBoxes.Keys) {
+                $SparatVarde = $RegObj.GetValue($Key, "")
+                if (-not [string]::IsNullOrWhiteSpace($SparatVarde)) {
+                    $Global:MatrixReleaseBoxes[$Key].Text = $SparatVarde
+                }
+            }
+        }
 })
 
     # =========================================================================================

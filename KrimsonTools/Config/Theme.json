@@ -1,23 +1,29 @@
 {
-    "ActiveTheme": "Kriminalvården Blue",
-    "Themes": {
-        "Kriminalvården Blue": {
-            "BgMain": "31,31,43",
-            "BgSideMenu": "20,30,105",
-            "BgChildForm": "16,16,16",
-            "AccentColor": "255,180,0",
-            "BtnHover": "45,45,60",
-            "TextWhite": "255,255,255",
-            "TextGray": "180,180,190"
-        },
-        "Krimson Dark": {
-            "BgMain": "45,45,48",
-            "BgSideMenu": "28,28,28",
-            "BgChildForm": "16,16,16",
-            "AccentColor": "255,100,0",
-            "BtnHover": "60,60,60",
-            "TextWhite": "255,255,255",
-            "TextGray": "150,150,150"
-        }
+  "ActiveTheme": "Kriminalvården Blue",
+  "Typography": {
+    "FontFamily": "Verdana",
+    "FontSizeTitle": "14",
+    "FontSizeMenu": "10",
+    "FontSizeStatus": "9"
+  },
+  "Themes": {
+    "Kriminalvården Blue": {
+      "BgMain": "31,31,43",
+      "BgSideMenu": "20,30,105",
+      "BgChildForm": "16,16,16",
+      "AccentColor": "255,180,0",
+      "BtnHover": "45,45,60",
+      "TextWhite": "255,255,255",
+      "TextGray": "180,180,190"
+    },
+    "Krimson Dark": {
+      "BgMain": "45,45,48",
+      "BgSideMenu": "28,28,28",
+      "BgChildForm": "16,16,16",
+      "AccentColor": "255,100,0",
+      "BtnHover": "60,60,60",
+      "TextWhite": "255,255,255",
+      "TextGray": "150,150,150"
     }
+  }
 }

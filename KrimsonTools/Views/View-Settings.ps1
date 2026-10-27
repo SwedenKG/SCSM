@@ -1,33 +1,34 @@
-# --- 1. METADATA (Dold från vanliga menyn) ---
 function Get-ViewConfig {
     return [PSCustomObject]@{
-        MainMenu        = "System"
-        MainMenuPrio    = 999
-        SubMenu         = "GlobalSettings"
-        SubMenuPrio     = 999
-        Enabled         = $false      # $false gör att den INTE visas i sidomenyn!
-        StatusText      = "Globala systeminställningar för KrimsonTools"
+        MainMenu     = "Inställningar"
+        MainMenuPrio = 99
+        SubMenu      = "Konfiguration"
+        SubMenuPrio  = 99
+        Enabled      = $false # Sätt till $false så den inte ritas som en vanlig knapp i sidomenyn! (Den ska ju bara nås via dubbelklick på loggan)
+        StatusText   = "Globala inställningar och miljöprofiler"
     }
 }
 
-# --- 2. INSTÄLLNINGAR (Kan lämnas tom eller användas) ---
-function Show-SettingsView {
-    param([System.Windows.Forms.Panel]$TargetPanel)
-}
+function Global:Show-SettingsView-Inställningar_Konfiguration {
+    # 1. Eftersom logga-klicket skapar $scrollPanel, kontrollerar vi att den finns
+    # Om den inte finns, använder vi panelChildForm direkt
+    $Container = $Global:panelChildForm
+    if ($Global:scrollPanel) {
+        $Container = $Global:scrollPanel
+    }
 
-# --- 3. DEN GLOBALA INSTÄLLNINGSVYN (Denna visas när man klickar på loggan) ---
-function Show-MainView {
-    param([System.Windows.Forms.Panel]$TargetPanel)
-    $TargetPanel.Controls.Clear()
-    
-    $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Text = "⚙ Globala Systeminställningar"
-    $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
-    $lbl.ForeColor = [System.Drawing.Color]::White
-    $lbl.AutoSize = $true
-    $lbl.Location = New-Object System.Drawing.Point(20, 20)
-    
-    # Här kan du bygga knappar för att byta logga, hantera JSON-filer etc.
-    $TargetPanel.Controls.Add($lbl)
-}
+    # 2. Skapa den interna rubriken inuti inställningscontainern
+    $lblSettingsTitle = New-Object System.Windows.Forms.Label
+    $lblSettingsTitle.Text = "Systeminställningar & Profilhantering"
+    $lblSettingsTitle.Font = New-Object System.Drawing.Font("Verdana", 14, [System.Drawing.FontStyle]::Bold)
+    $lblSettingsTitle.ForeColor = $Global:colorTextWhite
+    $lblSettingsTitle.Location = New-Object System.Drawing.Point(20, 20)
+    $lblSettingsTitle.AutoSize = $true
+    $Container.Controls.Add($lblSettingsTitle)
 
+    # 3. Här lägger vi till dropdowns för teman, servrar och sparmotorn (Del 1, 2 och 3 som vi byggde tidigare)
+    # Alla kontroller läggs till via: $Container.Controls.Add($dinKontroll)
+    
+    # Tvinga fram grafiklagret
+    $lblSettingsTitle.BringToFront()
+}

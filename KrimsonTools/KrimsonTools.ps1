@@ -72,6 +72,11 @@ $panelSideMenu.Dock = [System.Windows.Forms.DockStyle]::Left
 $panelSideMenu.BackColor = [System.Drawing.Color]::FromArgb(28, 28, 28)
 $KrimsonForm.Controls.Add($panelSideMenu)
 
+$Global:panelChildForm = New-Object System.Windows.Forms.Panel
+$Global:panelChildForm.Dock = [System.Windows.Forms.DockStyle]::Fill
+$Global:panelChildForm.BackColor = [System.Drawing.Color]::FromArgb(16, 16, 16)
+$KrimsonForm.Controls.Add($Global:panelChildForm)
+
 # Läs in logga
 $logoImage = $null; $ms = $null
 if (Test-Path $LogoJsonPath) {
@@ -87,15 +92,40 @@ if (Test-Path $LogoJsonPath) {
             $pictureBoxLogo.Location = New-Object System.Drawing.Point(10, 10)
             $pictureBoxLogo.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
             $pictureBoxLogo.Image = $logoImage
-            $panelSideMenu.Controls.Add($pictureBoxLogo)
+        
+            # NYTT: Ändra muspekaren till en hand när man håller över loggan
+            $pictureBoxLogo.Cursor = [System.Windows.Forms.Cursors]::Hand
+        
+            # NYTT: Säg åt loggan att köra inställnings-knappens klick-funktion vid dubbelklick
+        $pictureBoxLogo.Add_DoubleClick({
+            # 1. Töm arbetspanelen helt
+            $Global:panelChildForm.Controls.Clear()
+            
+            # 2. Skapa en scrollbar container-panel för att stapla modulernas inställningar i
+            $scrollPanel = New-Object System.Windows.Forms.Panel
+            $scrollPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
+            $scrollPanel.AutoScroll = $true
+            $Global:panelChildForm.Controls.Add($scrollPanel)
+            
+            # 3. Loopa igenom alla aktiva vyer och hämta deras specifika inställningsvyer
+            foreach ($View in $Global:SortedViews) {
+                if (Get-Command $View.SettingsFunc -ErrorAction SilentlyContinue) {
+                    $sectionPanel = New-Object System.Windows.Forms.Panel
+                    $sectionPanel.Size = New-Object System.Drawing.Size(920, 160)
+                    $sectionPanel.Dock = [System.Windows.Forms.DockStyle]::Top
+                    $sectionPanel.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+                    
+                    $scrollPanel.Controls.Add($sectionPanel)
+                    Invoke-Expression $View.SettingsFunc -ArgumentList $sectionPanel
+                }
+            }
+        })
+        
+        $panelSideMenu.Controls.Add($pictureBoxLogo)
+
         }
     } catch {}
 }
-
-$Global:panelChildForm = New-Object System.Windows.Forms.Panel
-$Global:panelChildForm.Dock = [System.Windows.Forms.DockStyle]::Fill
-$Global:panelChildForm.BackColor = [System.Drawing.Color]::FromArgb(16, 16, 16)
-$KrimsonForm.Controls.Add($Global:panelChildForm)
 
 $statusStrip = New-Object System.Windows.Forms.StatusStrip
 $statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel

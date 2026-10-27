@@ -9,7 +9,7 @@ function Get-ViewConfig {
     }
 }
 
-function Global:Show-SettingsView-Inställningar_Konfiguration {
+function Global:Show-SettingsView-Installningar_Konfiguratian {
     # Hitta rätt behållare (Använder scrollPanel om loggan klickats, annars childForm)
     $Container = $Global:panelChildForm
     if ($Global:scrollPanel) { $Container = $Global:scrollPanel }
@@ -174,4 +174,73 @@ function Global:Show-SettingsView-Inställningar_Konfiguration {
     &$RefreshProfiles
     $lblTitle.BringToFront()
     $profileSection.BringToFront()
+        # --- 3. SEKTION FÖR GUI & TEMA ---
+    $guiSection = New-Object System.Windows.Forms.Panel
+    $guiSection.Size = New-Object System.Drawing.Size(840, 180)
+    $guiSection.Location = New-Object System.Drawing.Point(20, 410)
+    $guiSection.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    $guiSection.BackColor = [System.Drawing.Color]::FromArgb(35, 35, 40)
+    $Container.Controls.Add($guiSection)
+
+    $lblGuiTitle = New-Object System.Windows.Forms.Label
+    $lblGuiTitle.Text = "Gränssnitt & Visningsalternativ:"
+    $lblGuiTitle.Font = New-Object System.Drawing.Font("Verdana", 10, [System.Drawing.FontStyle]::Bold)
+    $lblGuiTitle.ForeColor = $Global:colorTextWhite
+    $lblGuiTitle.Location = New-Object System.Drawing.Point(20, 15)
+    $lblGuiTitle.AutoSize = $true
+    $guiSection.Controls.Add($lblGuiTitle)
+
+    # Temaväljare Dropdown
+    $lblTheme = New-Object System.Windows.Forms.Label
+    $lblTheme.Text = "Aktivt Färgtema:"
+    $lblTheme.ForeColor = $Global:colorTextWhite
+    $lblTheme.Location = New-Object System.Drawing.Point(20, 55)
+    $guiSection.Controls.Add($lblTheme)
+
+    $comboThemes = New-Object System.Windows.Forms.ComboBox
+    $comboThemes.Location = New-Object System.Drawing.Point(160, 52)
+    $comboThemes.Size = New-Object System.Drawing.Size(220, 25)
+    $comboThemes.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    [void]$comboThemes.Items.AddRange(@("Kriminalvården Blue", "Krimson Dark"))
+    $guiSection.Controls.Add($comboThemes)
+
+    # Typsnittsväljare Dropdown
+    $lblFontFamily = New-Object System.Windows.Forms.Label
+    $lblFontFamily.Text = "Typsnitt (Font):"
+    $lblFontFamily.ForeColor = $Global:colorTextWhite
+    $lblFontFamily.Location = New-Object System.Drawing.Point(20, 95)
+    $guiSection.Controls.Add($lblFontFamily)
+
+    $comboFonts = New-Object System.Windows.Forms.ComboBox
+    $comboFonts.Location = New-Object System.Drawing.Point(160, 92)
+    $comboFonts.Size = New-Object System.Drawing.Size(220, 25)
+    $comboFonts.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    [void]$comboFonts.Items.AddRange(@("Verdana", "Segoe UI", "Arial"))
+    $guiSection.Controls.Add($comboFonts)
+
+    # --- AUTOSPAR-MOTOR FÖR TEMA & TYPSNITT ---
+    $SaveGuiSettings = {
+        $Path = "C:\KrimsonTools\Config\Theme.json"
+        if (Test-Path $Path) {
+            $Json = Get-Content -Raw -Path $Path | ConvertFrom-Json
+            
+            # Spara valen live till filen
+            $Json.ActiveTheme = $comboThemes.SelectedItem.ToString()
+            $Json.Typography.FontFamily = $comboFonts.SelectedItem.ToString()
+            
+            $Json | ConvertTo-Json -Depth 4 | Set-Content -Path $Path -Force
+            $Global:statusLabel.Text = "Ändringarna sparades direkt i Theme.json!"
+        }
+    }
+
+    # Hämta värdena från den redan inlästa globala tematrafiken i stället för att läsa filen igen
+    if ($Global:ActiveTheme) { $comboThemes.SelectedItem = $Global:ActiveTheme }
+    if ($Global:FontFamily) { $comboFonts.SelectedItem = $Global:FontFamily }
+
+    # Aktivera live-sparning vid klick/ändring
+    $comboThemes.Add_SelectedIndexChanged({ &$SaveGuiSettings })
+    $comboFonts.Add_SelectedIndexChanged({ &$SaveGuiSettings })
+
+    $guiSection.BringToFront()
 }
+

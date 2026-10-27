@@ -201,7 +201,7 @@ function Global:Show-SettingsView-Installningar_Konfiguratian {
     $comboThemes.Location = New-Object System.Drawing.Point(160, 52)
     $comboThemes.Size = New-Object System.Drawing.Size(220, 25)
     $comboThemes.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-    [void]$comboThemes.Items.AddRange(@("Kriminalvården Blue", "Krimson Dark"))
+    $comboThemes.Items.AddRange("Kriminalvården Blue", "Krimson Dark")
     $guiSection.Controls.Add($comboThemes)
 
     # Typsnittsväljare Dropdown
@@ -215,7 +215,7 @@ function Global:Show-SettingsView-Installningar_Konfiguratian {
     $comboFonts.Location = New-Object System.Drawing.Point(160, 92)
     $comboFonts.Size = New-Object System.Drawing.Size(220, 25)
     $comboFonts.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-    [void]$comboFonts.Items.AddRange(@("Verdana", "Segoe UI", "Arial"))
+    $comboFonts.Items.AddRange("Verdana", "Segoe UI", "Arial")
     $guiSection.Controls.Add($comboFonts)
 
     # --- AUTOSPAR-MOTOR FÖR TEMA & TYPSNITT ---

@@ -255,22 +255,22 @@ if ($logoImage -ne $null) {
         } 
         # VÄXLINGSFUNKTION (TOGGLE): OM VI STÅR I EN SCSM-VY -> SPARA VY-NAMNET OCH ÖPPNA INSTÄLLNINGARNA
         else {
-        if ($Global:CurrentActiveViewFunctionName) {
+            if ($Global:CurrentActiveViewFunctionName) {
             if (-not (Test-Path $RegKey)) { New-Item -Path $RegKey -Force | Out-Null }
                 Set-ItemProperty -Path $RegKey -Name "LastActiveView" -Value $Global:CurrentActiveViewFunctionName -Force
         }
             
-        # Sätt rätt topprubrik och status
-        $lblTitle.Text = "Inställningar"
-        $statusLabel.Text = "Öppnar konfiguration..."
+            # Sätt rätt topprubrik och status
+            $lblTitle.Text = "Inställningar"
+            $statusLabel.Text = "Öppnar konfiguration..."
             
-        # Anropa den modulära inställningsvyn från View-Settings.ps1
-        if (Get-Command "Global:Show-SettingsView-Installningar_Konfiguration" -ErrorAction SilentlyContinue) {
-            Global:Show-SettingsView-Installningar_Konfiguration
-        }
+            # Anropa den modulära inställningsvyn från View-Settings.ps1
+            Show-SettingsView-Installningar_Konfiguratian
+
     }
-    })
-    $panelSideMenu.Controls.Add($pictureBoxLogo)
+})
+$panelSideMenu.Controls.Add($pictureBoxLogo)
+
 }
 
 # ============================================================================

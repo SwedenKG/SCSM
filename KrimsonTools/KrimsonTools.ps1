@@ -75,18 +75,25 @@ if (Test-Path $ViewsFolder) {
             if (Get-Command "Get-ViewConfig" -ErrorAction SilentlyContinue) {
                 $Config = Get-ViewConfig
                 if ($Config.Enabled -eq $true) {
-                    $UniqueSuffix = "$($Config.MainMenu)_$($Config.SubMenu)" -replace '\s+',''
-                    Rename-Item Function:\Show-SettingsView -NewName "Show-SettingsView-$UniqueSuffix" -Force
-                    Rename-Item Function:\Show-MainView -NewName "Show-MainView-$UniqueSuffix" -Force
-                    
-                    $ViewData = [PSCustomObject]@{
-                        MainMenu     = $Config.MainMenu
-                        MainMenuPrio = [int]$Config.MainMenuPrio
-                        SubMenu      = $Config.SubMenu
-                        SubMenuPrio  = [int]$Config.SubMenuPrio
-                        StatusText   = $Config.StatusText
-                        SettingsFunc = "Show-SettingsView-$UniqueSuffix"
-                        MainFunc     = "Show-MainView-$UniqueSuffix"
+                    $cleanMain = $Config.MainMenu -replace '[åäåÅÄÖ]','a' -replace '\s+',''
+                    $cleanSub  = $Config.SubMenu -replace '[åäåÅÄÖ]','a' -replace '\s+',''
+                    $UniqueSuffix = "${cleanMain}_${cleanSub}"
+
+                    if (Test-Path "Function:\Show-SettingsView") {
+                        Rename-Item Function:\Show-SettingsView -NewName "Global:Show-SettingsView-$UniqueSuffix" -Force
+                    }
+                    if (Test-Path "Function:\Show-MainView") {
+                        Rename-Item Function:\Show-MainView -NewName "Global:Show-MainView-$UniqueSuffix" -Force
+                    }
+
+                    $viewData = [PSCustomObject]@{
+                        MainMenu       = $Config.MainMenu
+                        MainMenuPrio   = [int]$Config.MainMenuPrio
+                        SubMenu        = $Config.SubMenu
+                        SubMenuPrio    = [int]$Config.SubMenuPrio
+                        StatusText     = $Config.StatusText
+                        SettingsFunc   = "Show-SettingsView-$UniqueSuffix"
+                        MainFunc       = "Show-MainView-$UniqueSuffix"
                     }
                     $Global:LoadedViews.Add($ViewData)
                 }
@@ -201,6 +208,7 @@ $Global:panelChildForm = New-Object System.Windows.Forms.Panel
 $Global:panelChildForm.Dock = [System.Windows.Forms.DockStyle]::Fill
 $Global:panelChildForm.BackColor = $Global:ColorBgChildForm
 $KrimsonForm.Controls.Add($Global:panelChildForm)
+$Global:panelChildForm.BringToFront()
 
 # --- STEG 4: SIDOMENY (Läggs till ALLRA SIST för att skära av hörnen från topp till botten) ---
 $panelSideMenu = New-Object System.Windows.Forms.Panel
@@ -234,7 +242,7 @@ if ($logoImage -ne $null) {
         $scrollPanel.AutoScroll = $true
         $Global:panelChildForm.Controls.Add($scrollPanel)
         
-        # 4. Lägg till systemets inbyggda temaväljare överst
+        # 4a. Lägg till systemets inbyggda temaväljare överst
         $systemSection = New-Object System.Windows.Forms.Panel
         $systemSection.Size = New-Object System.Drawing.Size(920, 100)
         $systemSection.Dock = [System.Windows.Forms.DockStyle]::Top
@@ -248,7 +256,201 @@ if ($logoImage -ne $null) {
         $lblThemeInfo.AutoSize = $true
         $systemSection.Controls.Add($lblThemeInfo)
         
-        xxxx
+        # 4b. Skapa sektion för Miljöprofiler (Placeras under temaväljaren)
+        $profileSection = New-Object System.Windows.Forms.Panel
+        $profileSection.Size = New-Object System.Drawing.Size(920, 450)
+        $profileSection.Location = New-Object System.Drawing.Point(0, 110)
+        $profileSection.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+        $scrollPanel.Controls.Add($profileSection)
+
+        $lblProfileTitle = New-Object System.Windows.Forms.Label
+        $lblProfileTitle.Text = "Hantera Miljöprofiler:"
+        $lblProfileTitle.Font = New-Object System.Drawing.Font("Verdana", 10, [System.Drawing.FontStyle]::Bold)
+        $lblProfileTitle.ForeColor = $Global:colorTextWhite
+        $lblProfileTitle.Location = New-Object System.Drawing.Point(20, 20)
+        $lblProfileTitle.AutoSize = $true
+        $profileSection.Controls.Add($lblProfileTitle)
+
+        # Profilväljare (Dropdown för Miljöer)
+        $comboProfiles = New-Object System.Windows.Forms.ComboBox
+        $comboProfiles.Location = New-Object System.Drawing.Point(160, 15)
+        $comboProfiles.Size = New-Object System.Drawing.Size(220, 25)
+        $comboProfiles.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+        $profileSection.Controls.Add($comboProfiles)
+
+        # Dynamisk textruta för SCSM Server
+        $lblServer = New-Object System.Windows.Forms.Label
+        $lblServer.Text = "SCSM Server:"
+        $lblServer.ForeColor = $Global:colorTextWhite
+        $lblServer.Location = New-Object System.Drawing.Point(20, 60)
+        $lblServer.AutoSize = $true
+        $profileSection.Controls.Add($lblServer)
+
+        $Global:txtScsmServer = New-Object System.Windows.Forms.TextBox
+        $Global:txtScsmServer.Location = New-Object System.Drawing.Point(160, 57)
+        $Global:txtScsmServer.Size = New-Object System.Drawing.Size(220, 25)
+        $profileSection.Controls.Add($Global:txtScsmServer)
+
+        # SCSM SQL Server textruta
+        $lblSql = New-Object System.Windows.Forms.Label
+        $lblSql.Text = "SCSM SQL Server:"
+        $lblSql.ForeColor = $Global:colorTextWhite
+        $lblSql.Location = New-Object System.Drawing.Point(20, 100)
+        $lblSql.AutoSize = $true
+        $profileSection.Controls.Add($lblSql)
+
+        $Global:txtScsmSql = New-Object System.Windows.Forms.TextBox
+        $Global:txtScsmSql.Location = New-Object System.Drawing.Point(160, 97)
+        $Global:txtScsmSql.Size = New-Object System.Drawing.Size(220, 25)
+        $profileSection.Controls.Add($Global:txtScsmSql)
+
+        # SCSM Databasnamn textruta
+        $lblDb = New-Object System.Windows.Forms.Label
+        $lblDb.Text = "SCSM Databas:"
+        $lblDb.ForeColor = $Global:colorTextWhite
+        $lblDb.Location = New-Object System.Drawing.Point(20, 140)
+        $lblDb.AutoSize = $true
+        $profileSection.Controls.Add($lblDb)
+
+        $Global:txtScsmDb = New-Object System.Windows.Forms.TextBox
+        $Global:txtScsmDb.Location = New-Object System.Drawing.Point(160, 137)
+        $Global:txtScsmDb.Size = New-Object System.Drawing.Size(220, 25)
+        $profileSection.Controls.Add($Global:txtScsmDb)
+
+        $comboProfiles.Add_SelectedIndexChanged({
+            $selectedEnv = $comboProfiles.SelectedItem.ToString()
+            $Global:statusLabel.Text = "Läser in variabler för profil: $selectedEnv..."
+        
+            $regPath = "HKCU:\Software\KrimsonTools\Settings\MiljoProfiler\$selectedEnv"
+        
+            if (Test-Path $regPath) {
+                $data = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
+            
+                # Fyll i textrutorna live direkt från registret
+                $Global:txtScsmServer.Text = if ($data.SCSM_Server) { $data.SCSM_Server } else { "" }
+                $Global:txtScsmSql.Text    = if ($data.SCSM_SQL)    { $data.SCSM_SQL }    else { "" }
+                $Global:txtScsmDb.Text     = if ($data.SCSM_DB)     { $data.SCSM_DB }     else { "" }
+            
+                $Global:statusLabel.Text = "Profil '$selectedEnv' inläst."
+            } else {
+                # Töm rutorna om profilen är helt ny och saknar data
+                $Global:txtScsmServer.Text = ""
+                $Global:txtScsmSql.Text    = ""
+                $Global:txtScsmDb.Text     = ""
+                $Global:statusLabel.Text = "Ny profil vald: '$selectedEnv'. Fyll i fälten ovan."
+            }
+        })
+
+        # ASYNKRON SPARKNAPP (Körs i bakgrundstråd mot registret/SCSM)
+        $btnSaveProfile = New-Object System.Windows.Forms.Button
+        $btnSaveProfile.Text = "Spara Profil"
+        $btnSaveProfile.Location = New-Object System.Drawing.Point(160, 180)
+        $btnSaveProfile.Size = New-Object System.Drawing.Size(120, 30)
+        $btnSaveProfile.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+        $btnSaveProfile.ForeColor = [System.Drawing.Color]::White
+        $btnSaveProfile.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
+        $profileSection.Controls.Add($btnSaveProfile)
+
+        # Händelse för asynkron sparning av samtliga tre fält via Runspace
+        $btnSaveProfile.Add_Click({
+            $btnSaveProfile.Enabled = $false
+            $statusLabel.Text = "Sparar profilfält i bakgrunden..."
+
+            # Hämta aktuella värden från dina tre globala textrutor live
+            $targetServer = $Global:txtScsmServer.Text
+            $targetSql = $Global:txtScsmSql.Text
+            $targetDb = $Global:txtScsmDb.Text
+            $activeEnv = $comboProfiles.SelectedItem.ToString()
+
+            # Scriptblock som körs isolerat i bakgrundstråden
+            $saveBlock = {
+                param($server, $sql, $db, $env)
+                $regPath = "HKCU:\Software\KrimsonTools\Settings\MiljoProfiler\$env"
+                if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+            
+                # Skriv alla tre värden trådsäkert till Windows Register
+                Set-ItemProperty -Path $regPath -Name "SCSM_Server" -Value $server -Force
+                Set-ItemProperty -Path $regPath -Name "SCSM_SQL" -Value $sql -Force
+                Set-ItemProperty -Path $regPath -Name "SCSM_DB" -Value $db -Force
+                Start-Sleep -Seconds 1
+                return "Klart"
+            }
+
+            # Skicka med alla parametrar till din befintliga asynkrona Runspace-motor
+            $argsList = @{ server = $targetServer; sql = $targetSql; db = $targetDb; env = $activeEnv }
+            Invoke-SCSMTaskAsynchronous -ScriptBlock $saveBlock -ArgumentList $argsList -OnComplete {
+                param($result)
+                $btnSaveProfile.Enabled = $true
+                $statusLabel.Text = "Inställningarna sparade för profilen '$activeEnv'!"
+                Write-Host "[✓] Trådsäker sparning av profil slutförd." -ForegroundColor Green
+            }
+        })
+
+        # ASYNKRON TA BORT-KNAPP (Placeras bredvid sparaknappen)
+        $btnDeleteProfile = New-Object System.Windows.Forms.Button
+        $btnDeleteProfile.Text = "Ta bort Profil"
+        $btnDeleteProfile.Location = New-Object System.Drawing.Point(290, 180)
+        $btnDeleteProfile.Size = New-Object System.Drawing.Size(120, 30)
+        $btnDeleteProfile.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+        $btnDeleteProfile.ForeColor = [System.Drawing.Color]::White
+        $btnDeleteProfile.BackColor = [System.Drawing.Color]::FromArgb(165, 30, 30)
+        $profileSection.Controls.Add($btnDeleteProfile)
+
+        # Händelse för asynkron borttagning via Runspace
+        $btnDeleteProfile.Add_Click({
+            $activeEnv = $comboProfiles.SelectedItem.ToString()
+        
+            # Säkerhetsspärr så att man inte tar bort Prod av misstag utan bekräftelse
+            $msgBox = [System.Windows.Forms.MessageBox]::Show("Vill du verkligen ta bort profilen '$activeEnv'?", "Bekräfta radering", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            if ($msgBox -eq [System.Windows.Forms.DialogResult]::Yes) {
+                $btnDeleteProfile.Enabled = $false
+                $statusLabel.Text = "Rensar profil från registret..."
+
+                $deleteBlock = {
+                    param($env)
+                    $regPath = "HKCU:\Software\KrimsonTools\Settings\MiljoProfiler\$env"
+                    if (Test-Path $regPath) { Remove-Item -Path $regPath -Recurse -Force | Out-Null }
+                    return "Klart"
+                }
+
+                Invoke-SCSMTaskAsynchronous -ScriptBlock $deleteBlock -ArgumentList @{env=$activeEnv} -OnComplete {
+                    param($result)
+                    $btnDeleteProfile.Enabled = $true
+                    $statusLabel.Text = "Profil '$activeEnv' raderad."
+                
+                    # Töm textrutorna i huvudtråden efter borttagning
+                    $Global:txtScsmServer.Text = ""
+                    $Global:txtScsmSql.Text = ""
+                    $Global:txtScsmDb.Text = ""
+                }
+            }
+        })
+
+        # Funktion för att läsa in och uppdatera profil-dropdownen live från registret
+        function Refresh-ProfileDropdown {
+            $comboProfiles.Items.Clear()
+            $regPath = "HKCU:\Software\KrimsonTools\Settings\MiljoProfiler"
+        
+            if (Test-Path $regPath) {
+                # Hämta alla undernycklar (t.ex. IT, Test, Prod)
+                $subKeys = Get-ChildItem -Path $regPath | Select-Object -ExpandProperty PSChildName
+                foreach ($key in $subKeys) {
+                    [void]$comboProfiles.Items.Add($key)
+                }
+            }
+        
+            # Sätt standardval till första profilen om listan inte är tom
+            if ($comboProfiles.Items.Count -gt 0) {
+                $comboProfiles.SelectedIndex = 0
+            } else {
+                # Lägg till en standardprofil om registret är helt tomt
+                [void]$comboProfiles.Items.Add("IT")
+                $comboProfiles.SelectedIndex = 0
+            }
+        }
+
+        # Kör inläsningen direkt vid rendering så dropdownen fylls med data
+        Refresh-ProfileDropdown
 
         $comboThemes = New-Object System.Windows.Forms.ComboBox
         $comboThemes.Location = New-Object System.Drawing.Point(160, 35)
@@ -304,7 +506,8 @@ if ($logoImage -ne $null) {
                 $sectionPanel.Dock = [System.Windows.Forms.DockStyle]::Top
                 $sectionPanel.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
                 $scrollPanel.Controls.Add($sectionPanel)
-                Invoke-Expression $View.SettingsFunc -ArgumentList $sectionPanel
+                # Kör inställningsvyn helt teckensäkert och modulärt via Call Operator (&)
+                & $view.SettingsFunc
             }
         }
     })
@@ -356,7 +559,8 @@ foreach ($View in $Global:SortedViews) {
         $lblTitle.Text = "$($View.MainMenu) - $($View.SubMenu)"
         $Global:panelChildForm.Controls.Clear()
         if (Get-Command $View.MainFunc -ErrorAction SilentlyContinue) {
-            Invoke-Expression $View.MainFunc -ArgumentList $Global:panelChildForm
+            # Kör den globala funktionen trådsäkert med Call Operator (&) i stället för Invoke-Expression
+            & $view.MainFunc
         }
     })
     

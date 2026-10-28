@@ -34,6 +34,7 @@ function Load-KrimsonTheme {
     if (Test-Path $ThemePath) {
         try {
             $ThemeData = Get-Content -Path $ThemePath -Raw | ConvertFrom-Json
+            $Global:ThemeConfig = $ThemeData
             $ActiveName = $ThemeData.ActiveTheme
             $SelectedTheme = $ThemeData.Themes.$ActiveName
 
@@ -123,7 +124,7 @@ if (Test-Path $LogoJsonPath) {
 # 4. GRAFISKT GRÄNSSNITT (Perfekt dockningsordning - Topp, Botten & Mitten först)
 # ============================================================================
 $KrimsonForm = New-Object System.Windows.Forms.Form
-$KrimsonForm.Text = "KrimsonTools"
+$KrimsonForm.Text = "KrimsonTool v0.1"
 $KrimsonForm.Size = New-Object System.Drawing.Size(1200, 800)
 $KrimsonForm.StartPosition = "CenterScreen"
 $KrimsonForm.BackColor = $Global:ColorBgMain
@@ -132,10 +133,10 @@ $KrimsonForm.BackColor = $Global:ColorBgMain
 $panelHeader = New-Object System.Windows.Forms.Panel
 $panelHeader.Height = 40
 $panelHeader.Dock = [System.Windows.Forms.DockStyle]::Top
-$panelHeader.BackColor = $Global:ColorBgMain
+$panelHeader.BackColor = $Global:colorBgSideMenu
 
 $lblTitle = New-Object System.Windows.Forms.Label
-$lblTitle.Text = "KrimsonTools"
+$lblTitle.Text = ""
 $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 14, [System.Drawing.FontStyle]::Bold)
 $lblTitle.ForeColor = $Global:ColorTextWhite
 $lblTitle.Location = New-Object System.Drawing.Point(15, 8)
@@ -145,7 +146,13 @@ $KrimsonForm.Controls.Add($panelHeader)
 
 # --- STEG 2: STATUSRAD LÄNGST NER MED MILJÖDROPDOWN ---
 $statusStrip = New-Object System.Windows.Forms.StatusStrip
-$statusStrip.BackColor = $Global:ColorBgSideMenu
+$ActiveName = $Global:ThemeConfig.ActiveTheme
+if ($Global:ThemeConfig.Themes."$ActiveName".AccentColor) {
+    $AccentRGB = $Global:ThemeConfig.Themes."$ActiveName".AccentColor.Split(',')
+    $statusStrip.BackColor = [System.Drawing.Color]::FromArgb($AccentRGB[0], $AccentRGB[1], $AccentRGB[2])
+} else {
+    $statusStrip.BackColor = $Global:colorBgSideMenu
+}
 $statusStrip.SizingGrip = $false 
 $statusStrip.Dock = [System.Windows.Forms.DockStyle]::Bottom
 
@@ -188,7 +195,7 @@ if ($LastEnv -and $Global:comboStatusMiljo.Items.Contains($LastEnv)) {
 # Kapsla in ComboBoxen så den tillåts bo inuti statusraden
 $hostCombo = New-Object System.Windows.Forms.ToolStripControlHost($Global:comboStatusMiljo)
 $statusStrip.Items.Add($hostCombo) | Out-Null
-
+$statusStrip.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, $Global:ThemeConfig.Typography.FontSizeStatus)
 $KrimsonForm.Controls.Add($statusStrip)
 
 # HÄNDELSE: När en tekniker byter miljö nere i statusraden -> Spara och synka mittenvyn live!
@@ -211,18 +218,17 @@ $KrimsonForm.Controls.Add($Global:panelChildForm)
 $Global:panelChildForm.BringToFront()
 
 # --- STEG 4: SIDOMENY (Läggs till ALLRA SIST för att skära av hörnen från topp till botten) ---
-$panelSideMenu = New-Object System.Windows.Forms.Panel
-$panelSideMenu.Width = 220
-$panelSideMenu.Dock = [System.Windows.Forms.DockStyle]::Left
-$panelSideMenu.BackColor = $Global:ColorBgSideMenu
-$panelSideMenu.AutoScroll = $true 
+$panelSideMenu = New-Object System.Windows.Forms.FlowLayoutPanel
+$panelSideMenu.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
+$panelSideMenu.Size = New-Object System.Drawing.Size(175, 800)
+$panelSideMenu.AutoSize = $false
 $KrimsonForm.Controls.Add($panelSideMenu)
 
 # Logotyp överst i den nyskapade sidomenyn
 if ($logoImage -ne $null) {
     $pictureBoxLogo = New-Object System.Windows.Forms.PictureBox
-    $pictureBoxLogo.Size = New-Object System.Drawing.Size(200, 80)
-    $pictureBoxLogo.Location = New-Object System.Drawing.Point(10, 10)
+    $pictureBoxLogo.Size = New-Object System.Drawing.Size(175, 80)
+    $pictureBoxLogo.Margin = New-Object System.Windows.Forms.Padding(5, 10, 10, 20)
     $pictureBoxLogo.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
     $pictureBoxLogo.Image = $logoImage
     $pictureBoxLogo.Cursor = [System.Windows.Forms.Cursors]::Hand
@@ -265,7 +271,7 @@ if ($logoImage -ne $null) {
             $statusLabel.Text = "Öppnar konfiguration..."
             
             # Anropa den modulära inställningsvyn från View-Settings.ps1
-            Show-SettingsView-Installningar_Konfiguratian
+            Show-SettingsViewInstallningarKonfiguration
 
     }
 })
@@ -276,33 +282,56 @@ $panelSideMenu.Controls.Add($pictureBoxLogo)
 # ============================================================================
 # 5. GENERERA MENYUTBUD UTIFRÅN SKANNADE FILER
 # ============================================================================
-$ButtonY = 110
 $LastMainMenu = ""
 
 foreach ($View in $Global:SortedViews) {
     if ($View.MainMenu -ne $LastMainMenu) {
         $lblHeader = New-Object System.Windows.Forms.Label
-        $lblHeader.Text = $View.MainMenu.ToUpper()
-        $lblHeader.ForeColor = $Global:ColorAccent
-        $lblHeader.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $lblHeader.Location = New-Object System.Drawing.Point(15, $ButtonY)
+        $lblHeader.Text = $View.MainMenu
+        $lblHeader.ForeColor = $Global:colorTextWhite
+        $lblHeader.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, $Global:ThemeConfig.Typography.FontSizeTitle)
         $lblHeader.AutoSize = $true
         $panelSideMenu.Controls.Add($lblHeader)
-        $ButtonY += 22
+
         $LastMainMenu = $View.MainMenu
+
+        $lblHeader.Add_Click({
+            # Återställ alla andra rubriker till vit textfärg först
+            foreach ($Control in $panelSideMenu.Controls) {
+                if ($Control -is [System.Windows.Forms.Label]) { $Control.ForeColor = $Global:colorTextWhite }
+            }
+        
+            # Tänd den klickade rubriken med sparad AccentColor från JSON
+            $ActiveName = $Global:ThemeConfig.ActiveTheme
+            if ($Global:ThemeConfig.Themes."$ActiveName".AccentColor) {
+                $AccentRGB = $Global:ThemeConfig.Themes."$ActiveName".AccentColor.Split(',')
+                $this.ForeColor = [System.Drawing.Color]::FromArgb($AccentRGB[0], $AccentRGB[1], $AccentRGB[2])
+            }
+
+            # Hitta alla knappar som tillhör just denna huvudmeny och växla deras synlighet
+            $CurrentMenu = $View.MainMenu
+            foreach ($Control in $panelSideMenu.Controls) {
+                if ($Control -is [System.Windows.Forms.Button]) {
+                    if ($Control.Tag -eq $CurrentMenu) { $Control.Visible = -not $Control.Visible }
+                }
+            }
+            $panelSideMenu.PerformLayout()
+        })
     }
     
     $btnMenu = New-Object System.Windows.Forms.Button
     $btnMenu.Text = "  " + $View.SubMenu
-    $btnMenu.Size = New-Object System.Drawing.Size(200, 30)
-    $btnMenu.Location = New-Object System.Drawing.Point(10, $ButtonY)
+    $btnMenu.Size = New-Object System.Drawing.Size(155, 30)
     $btnMenu.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $btnMenu.FlatAppearance.BorderSize = 0
-    $btnMenu.ForeColor = $Global:ColorTextWhite
-    $btnMenu.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-    $btnMenu.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+    $btnMenu.ForeColor = $Global:colorTextWhite
+    $btnMenu.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    $btnMenu.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, $Global:ThemeConfig.Typography.FontSizeTitle)
     $btnMenu.BackColor = $Global:ColorBgSideMenu
-    
+    $btnMenu.Visible = ($View.SubMenu -eq $View.MainMenu)
+    $btnMenu.Tag = $View.MainMenu
+    $panelSideMenu.Controls.Add($btnMenu)
+
     $btnMenu.Add_MouseEnter({
         $this.BackColor = $Global:ColorBtnHover
         $statusLabel.Text = $View.StatusText
@@ -315,13 +344,34 @@ foreach ($View in $Global:SortedViews) {
     $btnMenu.Add_Click({
         param($sender, $e)
         $lblTitle.Text = "$($View.MainMenu) - $($View.SubMenu)"
+        $lblTitle.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, $Global:ThemeConfig.Typography.FontSizeTitle)
         $Global:panelChildForm.Controls.Clear()
 
-        # Kom ihåg vilken funktion vi står i för att kunna växla tillbaka via loggan
-        $Global:CurrentActiveViewFunctionName = $View.MainFunc
+        # --- ÅTERSTÄLL MENYFÄRGER OCH KOLLAPSA (Från gamla Tools.ps1) ---
+        # Återställ alla huvudmenyer till den sparade textfärgen från JSON
+        foreach ($Control in $panelSideMenu.Controls) {
+            if ($Control -is [System.Windows.Forms.Button]) {
+                $Control.ForeColor = $Global:colorTextWhite
+            }
+        }
 
+        # Sätt den klickade menyn till AccentColor (Orange/Vald färg) från JSON
+        if ($Global:ThemeConfig.Themes."$($Global:ThemeConfig.ActiveTheme)".AccentColor) {
+            $AccentRGB = $Global:ThemeConfig.Themes."$($Global:ThemeConfig.ActiveTheme)".AccentColor.Split(',')
+            $sender.ForeColor = [System.Drawing.Color]::FromArgb($AccentRGB[0], $AccentRGB[1], $AccentRGB[2])
+        }
+
+        # Om vi klickar på själva undermenyvalet (t.ex. Ärenden), stäng undermenyn och återställ till textfärg
+        if ($View.SubMenu -ne $View.MainMenu) {
+            # Dölj panelen för undermenyn (Dynamiskt baserat på namnet från din gamla kod)
+            Get-Variable -Name "panelSubMenu$($View.MainMenu)" -ValueOnly -ErrorAction SilentlyContinue | ForEach-Object { $_.Visible = $false }
+        
+        # Sätt färgen tillbaka till den sparade textfärgen eftersom vi har gjort vårt val
+        $sender.ForeColor = $Global:colorTextWhite
+        }
+
+        # Kör den globala funktionen trådsäkert och modulärt
         if (Get-Command $View.MainFunc -ErrorAction SilentlyContinue) {
-            # Kör den globala funktionen trådsäkert och modulärt
             & $View.MainFunc
         }
     })
@@ -340,6 +390,9 @@ $KrimsonForm.Add_FormClosing({
     [System.GC]::Collect()
     [System.GC]::WaitForPendingFinalizers()
 })
+
+# --- LÄS IN FÄRGER OCH STORLEKAR FRÅN JSON INNAN START ---
+Load-KrimsonTheme
 
 # --- STARTA GRÄNSSNITTET (Denna saknas längst ner i din fil!) ---
 $KrimsonForm.ShowDialog() | Out-Null

@@ -220,15 +220,17 @@ $Global:panelChildForm.BringToFront()
 # --- STEG 4: SIDOMENY (Läggs till ALLRA SIST för att skära av hörnen från topp till botten) ---
 $panelSideMenu = New-Object System.Windows.Forms.FlowLayoutPanel
 $panelSideMenu.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
-$panelSideMenu.Size = New-Object System.Drawing.Size(175, 800)
-$panelSideMenu.AutoSize = $false
+$panelSideMenu.Width = 175
+$panelSideMenu.Height = 800
+$panelSideMenu.Dock = [System.Windows.Forms.DockStyle]::Left
+$panelSideMenu.BackColor = $Global:colorBgSideMenu
 $KrimsonForm.Controls.Add($panelSideMenu)
 
 # Logotyp överst i den nyskapade sidomenyn
 if ($logoImage -ne $null) {
     $pictureBoxLogo = New-Object System.Windows.Forms.PictureBox
     $pictureBoxLogo.Size = New-Object System.Drawing.Size(175, 80)
-    $pictureBoxLogo.Margin = New-Object System.Windows.Forms.Padding(5, 10, 10, 20)
+    $pictureBoxLogo.Margin = New-Object System.Windows.Forms.Padding(0, 10, 10, 20)
     $pictureBoxLogo.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
     $pictureBoxLogo.Image = $logoImage
     $pictureBoxLogo.Cursor = [System.Windows.Forms.Cursors]::Hand
@@ -254,8 +256,8 @@ if ($logoImage -ne $null) {
                 }
             } else {
                 # Fallback om registret är tomt: Skicka till Ärenden
-                if (Get-Command "Global:Show-MainView-Daily_Arenden" -ErrorAction SilentlyContinue) {
-                    Global:Show-MainView-Daily_Arenden
+                if (Get-Command "Show-MainViewDailyTickets" -ErrorAction SilentlyContinue) {
+                    Show-MainViewDailyTickets
                 }
             }
         } 
@@ -272,11 +274,9 @@ if ($logoImage -ne $null) {
             
             # Anropa den modulära inställningsvyn från View-Settings.ps1
             Show-SettingsViewInstallningarKonfiguration
-
     }
-})
-$panelSideMenu.Controls.Add($pictureBoxLogo)
-
+    })
+    $panelSideMenu.Controls.Add($pictureBoxLogo)
 }
 
 # ============================================================================

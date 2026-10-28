@@ -9,7 +9,7 @@ function Get-ViewConfig {
     }
 }
 
-function Global:Show-SettingsView-Installningar_Konfiguratian {
+function Global:Show-SettingsViewInstallningarKonfiguration {
     # Hitta rätt behållare (Använder scrollPanel om loggan klickats, annars childForm)
     $Container = $Global:panelChildForm
     if ($Global:scrollPanel) { $Container = $Global:scrollPanel }
@@ -201,7 +201,7 @@ function Global:Show-SettingsView-Installningar_Konfiguratian {
     $comboThemes.Location = New-Object System.Drawing.Point(160, 52)
     $comboThemes.Size = New-Object System.Drawing.Size(220, 25)
     $comboThemes.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-    $comboThemes.Items.AddRange("Kriminalvården Blue", "Krimson Dark")
+    $comboThemes.Items.AddRange(@("Kriminalvården Blue", "Krimson Dark"))
     $guiSection.Controls.Add($comboThemes)
 
     # Typsnittsväljare Dropdown
@@ -211,12 +211,41 @@ function Global:Show-SettingsView-Installningar_Konfiguratian {
     $lblFontFamily.Location = New-Object System.Drawing.Point(20, 95)
     $guiSection.Controls.Add($lblFontFamily)
 
-    $comboFonts = New-Object System.Windows.Forms.ComboBox
-    $comboFonts.Location = New-Object System.Drawing.Point(160, 92)
-    $comboFonts.Size = New-Object System.Drawing.Size(220, 25)
-    $comboFonts.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-    $comboFonts.Items.AddRange("Verdana", "Segoe UI", "Arial")
-    $guiSection.Controls.Add($comboFonts)
+    $btnPickFont = New-Object System.Windows.Forms.Button
+    $btnPickFont.Location = New-Object System.Drawing.Point(160, 92)
+    $btnPickFont.Size = New-Object System.Drawing.Size(220, 25)
+    $btnPickFont.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnPickFont.ForeColor = $Global:colorTextWhite
+    $btnPickFont.Text = "$($Global:ThemeConfig.Typography.FontFamily) (Ändra...)"
+    $guiSection.Controls.Add($btnPickFont)
+
+    # Rubrikstorlek Dropdown
+    $lblHeaderSize = New-Object System.Windows.Forms.Label
+    $lblHeaderSize.Text = "Rubrikstorlek:"
+    $lblHeaderSize.ForeColor = $Global:colorTextWhite
+    $lblHeaderSize.Location = New-Object System.Drawing.Point(20, 135)
+    $guiSection.Controls.Add($lblHeaderSize)
+
+    $comboHeaderSize = New-Object System.Windows.Forms.ComboBox
+    $comboHeaderSize.Location = New-Object System.Drawing.Point(160, 132)
+    $comboHeaderSize.Size = New-Object System.Drawing.Size(220, 25)
+    $comboHeaderSize.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    $comboHeaderSize.Items.AddRange(@("12", "14", "16", "18", "20"))
+    $guiSection.Controls.Add($comboHeaderSize)
+
+    # Statusbar-storlek Dropdown
+    $lblStatusSize = New-Object System.Windows.Forms.Label
+    $lblStatusSize.Text = "Statusbar-storlek:"
+    $lblStatusSize.ForeColor = $Global:colorTextWhite
+    $lblStatusSize.Location = New-Object System.Drawing.Point(20, 175)
+    $guiSection.Controls.Add($lblStatusSize)
+
+    $comboStatusSize = New-Object System.Windows.Forms.ComboBox
+    $comboStatusSize.Location = New-Object System.Drawing.Point(160, 172)
+    $comboStatusSize.Size = New-Object System.Drawing.Size(220, 25)
+    $comboStatusSize.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    $comboStatusSize.Items.AddRange(@("8", "9", "10", "11", "12"))
+    $guiSection.Controls.Add($comboStatusSize)
 
     # --- AUTOSPAR-MOTOR FÖR TEMA & TYPSNITT ---
     $SaveGuiSettings = {
@@ -226,8 +255,9 @@ function Global:Show-SettingsView-Installningar_Konfiguratian {
             
             # Spara valen live till filen
             $Json.ActiveTheme = $comboThemes.SelectedItem.ToString()
-            $Json.Typography.FontFamily = $comboFonts.SelectedItem.ToString()
-            
+            $Json.Typography.FontFamily = $Global:ThemeConfig.Typography.FontFamily
+            $Json.Typography.FontSizeTitle = $comboHeadersize.SelectedItem.ToString()
+            $Json.Typography.FontSizeStatus = $comboStatussize.SelectedItem.ToString()
             $Json | ConvertTo-Json -Depth 4 | Set-Content -Path $Path -Force
             $Global:statusLabel.Text = "Ändringarna sparades direkt i Theme.json!"
         }
@@ -235,12 +265,31 @@ function Global:Show-SettingsView-Installningar_Konfiguratian {
 
     # Hämta värdena från den redan inlästa globala tematrafiken i stället för att läsa filen igen
     if ($Global:ActiveTheme) { $comboThemes.SelectedItem = $Global:ActiveTheme }
-    if ($Global:FontFamily) { $comboFonts.SelectedItem = $Global:FontFamily }
+    if ($Global:ThemeConfig.Typography.FontSizeTitle) { $comboHeadersize.SelectedItem = $Global:ThemeConfig.Typography.FontSizeTitle }
+    if ($Global:ThemeConfig.Typography.FontSizeStatus) { $comboStatussize.SelectedItem = $Global:ThemeConfig.Typography.FontSizeStatus }
 
     # Aktivera live-sparning vid klick/ändring
-    $comboThemes.Add_SelectedIndexChanged({ &$SaveGuiSettings })
-    $comboFonts.Add_SelectedIndexChanged({ &$SaveGuiSettings })
+    $comboThemes.Add_SelectedIndexChanged({ &$SaveGuisettings; Load-KrimsonTheme })
+    $btnPickFont.Add_Click({
+        $fontDialog = New-Object System.Windows.Forms.FontDialog
+        $fontDialog.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, 12)
+        if ($fontDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $Global:ThemeConfig.Typography.FontFamily = $fontDialog.Font.Name
+            $btnPickFont.Text = "$($fontDialog.Font.Name) (Ändra...)"
+            &$SaveGuisettings
+            Load-KrimsonTheme
+
+            # Uppdatera menyknapparna i gränssnittet live direkt vid klick
+            foreach ($Control in $Global:panelSideMenu.Controls) {
+                if ($Control -is [System.Windows.Forms.Button]) {
+                    $Control.Font = New-Object System.Drawing.Font($fontDialog.Font.Name, $Global:ThemeConfig.Typography.FontSizeTitle, [System.Drawing.FontStyle]::Bold)
+                    $Control.Refresh()
+                }
+            }
+        }
+    })
+    $comboHeadersize.Add_SelectedIndexChanged({ &$SaveGuisettings; Load-KrimsonTheme })
+    $comboStatussize.Add_SelectedIndexChanged({ &$SaveGuisettings; Load-KrimsonTheme })
 
     $guiSection.BringToFront()
 }
-

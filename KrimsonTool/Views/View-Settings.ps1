@@ -28,6 +28,9 @@ function Global:Show-SettingsViewInstallningarKonfiguration {
     $profileSection = New-Object System.Windows.Forms.Panel
     $profileSection.Size = New-Object System.Drawing.Size(840, 320)
     $profileSection.Location = New-Object System.Drawing.Point(20, 70)
+    # Lägg till under rad 30 ($profileSection.Location = ...):
+    $profileSection.Width  = $Container.ClientSize.Width - 40
+    $profileSection.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right)
     $profileSection.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
     $profileSection.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 35)
     $Container.Controls.Add($profileSection)

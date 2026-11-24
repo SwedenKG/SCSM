@@ -14,37 +14,35 @@ function Global:Show-SettingsViewInstallningarKonfiguration {
     $Container = $Global:panelChildForm
     if ($Global:scrollPanel) { $Container = $Global:scrollPanel }
     $Container.Controls.Clear()
-
-    # --- 1. RUBRIK ---
-    $lblTitle = New-Object System.Windows.Forms.Label
-    $lblTitle.Text = "Systeminställningar & Profilhantering"
-    $lblTitle.Font = New-Object System.Drawing.Font("Verdana", 14, [System.Drawing.FontStyle]::Bold)
-    $lblTitle.ForeColor = $Global:colorTextWhite
-    $lblTitle.Location = New-Object System.Drawing.Point(20, 20)
-    $lblTitle.AutoSize = $true
-    $Container.Controls.Add($lblTitle)
+    $Container.AutoScroll = $true
 
     # --- 2. SEKTION FÖR MILJÖPROFILER ---
     $profileSection = New-Object System.Windows.Forms.Panel
-    $profileSection.Size = New-Object System.Drawing.Size(840, 320)
-    $profileSection.Location = New-Object System.Drawing.Point(20, 70)
-    # Lägg till under rad 30 ($profileSection.Location = ...):
-    $profileSection.Width  = $Container.ClientSize.Width - 40
+    $profileSection.Size = New-Object System.Drawing.Size(($Container.ClientSize.Width - 40), 320)
+    $profileSection.Location = New-Object System.Drawing.Point(20, 20)
     $profileSection.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right)
     $profileSection.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-    $profileSection.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 35)
+    $profileSection.BackColor = $Global:colorBgMain
     $Container.Controls.Add($profileSection)
+
+    $lblProfTitle = New-Object System.Windows.Forms.Label
+    $lblProfTitle.Text = "Systeminställningar & Profilhantering:"
+    $lblProfTitle.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, 11, [System.Drawing.FontStyle]::Bold)
+    $lblProfTitle.ForeColor = $Global:colorTextWhite
+    $lblProfTitle.Location = New-Object System.Drawing.Point(20, 15)
+    $lblProfTitle.AutoSize = $true
+    $profileSection.Controls.Add($lblProfTitle)
 
     # Dropdown för Profiler (Miljöer)
     $lblEnv = New-Object System.Windows.Forms.Label
     $lblEnv.Text = "Välj miljöprofil:"
     $lblEnv.ForeColor = $Global:colorTextWhite
-    $lblEnv.Location = New-Object System.Drawing.Point(20, 25)
+    $lblEnv.Location = New-Object System.Drawing.Point(20, 55)
     $lblEnv.AutoSize = $true
     $profileSection.Controls.Add($lblEnv)
 
     $comboProfiles = New-Object System.Windows.Forms.ComboBox
-    $comboProfiles.Location = New-Object System.Drawing.Point(160, 22)
+    $comboProfiles.Location = New-Object System.Drawing.Point(160, 52)
     $comboProfiles.Size = New-Object System.Drawing.Size(220, 25)
     $comboProfiles.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
     $profileSection.Controls.Add($comboProfiles)
@@ -53,12 +51,12 @@ function Global:Show-SettingsViewInstallningarKonfiguration {
     $lblServer = New-Object System.Windows.Forms.Label
     $lblServer.Text = "SCSM Server:"
     $lblServer.ForeColor = $Global:colorTextWhite
-    $lblServer.Location = New-Object System.Drawing.Point(20, 75)
+    $lblServer.Location = New-Object System.Drawing.Point(20, 95)
     $lblServer.AutoSize = $true
     $profileSection.Controls.Add($lblServer)
 
     $Global:txtScsmServer = New-Object System.Windows.Forms.TextBox
-    $Global:txtScsmServer.Location = New-Object System.Drawing.Point(160, 72)
+    $Global:txtScsmServer.Location = New-Object System.Drawing.Point(160, 92)
     $Global:txtScsmServer.Size = New-Object System.Drawing.Size(220, 25)
     $profileSection.Controls.Add($Global:txtScsmServer)
 
@@ -66,12 +64,12 @@ function Global:Show-SettingsViewInstallningarKonfiguration {
     $lblSql = New-Object System.Windows.Forms.Label
     $lblSql.Text = "SCSM SQL Server:"
     $lblSql.ForeColor = $Global:colorTextWhite
-    $lblSql.Location = New-Object System.Drawing.Point(20, 115)
+    $lblSql.Location = New-Object System.Drawing.Point(20, 135)
     $lblSql.AutoSize = $true
     $profileSection.Controls.Add($lblSql)
 
     $Global:txtScsmSql = New-Object System.Windows.Forms.TextBox
-    $Global:txtScsmSql.Location = New-Object System.Drawing.Point(160, 112)
+    $Global:txtScsmSql.Location = New-Object System.Drawing.Point(160, 132)
     $Global:txtScsmSql.Size = New-Object System.Drawing.Size(220, 25)
     $profileSection.Controls.Add($Global:txtScsmSql)
 
@@ -79,12 +77,12 @@ function Global:Show-SettingsViewInstallningarKonfiguration {
     $lblDb = New-Object System.Windows.Forms.Label
     $lblDb.Text = "SCSM Databas:"
     $lblDb.ForeColor = $Global:colorTextWhite
-    $lblDb.Location = New-Object System.Drawing.Point(20, 155)
+    $lblDb.Location = New-Object System.Drawing.Point(20, 175)
     $lblDb.AutoSize = $true
     $profileSection.Controls.Add($lblDb)
 
     $Global:txtScsmDb = New-Object System.Windows.Forms.TextBox
-    $Global:txtScsmDb.Location = New-Object System.Drawing.Point(160, 152)
+    $Global:txtScsmDb.Location = New-Object System.Drawing.Point(160, 172)
     $Global:txtScsmDb.Size = New-Object System.Drawing.Size(220, 25)
     $profileSection.Controls.Add($Global:txtScsmDb)
 
@@ -92,20 +90,20 @@ function Global:Show-SettingsViewInstallningarKonfiguration {
     # Spara-knapp
     $btnSaveProfile = New-Object System.Windows.Forms.Button
     $btnSaveProfile.Text = "Spara Profil"
-    $btnSaveProfile.Location = New-Object System.Drawing.Point(160, 205)
+    $btnSaveProfile.Location = New-Object System.Drawing.Point(160, 225)
     $btnSaveProfile.Size = New-Object System.Drawing.Size(100, 30)
     $btnSaveProfile.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $btnSaveProfile.ForeColor = [System.Drawing.Color]::White
-    $btnSaveProfile.BackColor = [System.Drawing.Color]::FromArgb(20, 30, 105)
+    $btnSaveProfile.ForeColor = $Global:colorTextWhite
+    $btnSaveProfile.BackColor = $Global:colorBgSideMenu
     $profileSection.Controls.Add($btnSaveProfile)
 
     # Radera-knapp
     $btnDeleteProfile = New-Object System.Windows.Forms.Button
     $btnDeleteProfile.Text = "Ta bort Profil"
-    $btnDeleteProfile.Location = New-Object System.Drawing.Point(280, 205)
+    $btnDeleteProfile.Location = New-Object System.Drawing.Point(280, 225)
     $btnDeleteProfile.Size = New-Object System.Drawing.Size(100, 30)
     $btnDeleteProfile.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $btnDeleteProfile.ForeColor = [System.Drawing.Color]::White
+    $btnDeleteProfile.ForeColor = $Global:colorTextWhite
     $btnDeleteProfile.BackColor = [System.Drawing.Color]::FromArgb(165, 30, 30)
     $profileSection.Controls.Add($btnDeleteProfile)
 
@@ -175,14 +173,15 @@ function Global:Show-SettingsViewInstallningarKonfiguration {
 
     # Initiera data live
     &$RefreshProfiles
-    $lblTitle.BringToFront()
+
     $profileSection.BringToFront()
         # --- 3. SEKTION FÖR GUI & TEMA ---
     $guiSection = New-Object System.Windows.Forms.Panel
-    $guiSection.Size = New-Object System.Drawing.Size(840, 180)
-    $guiSection.Location = New-Object System.Drawing.Point(20, 410)
+    $guiSection.Size = New-Object System.Drawing.Size(($Container.ClientSize.Width - 40), 270)
+    $guiSection.Location = New-Object System.Drawing.Point(20, 360)
+    $guiSection.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right)
     $guiSection.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-    $guiSection.BackColor = [System.Drawing.Color]::FromArgb(35, 35, 40)
+    $guiSection.BackColor = $Global:colorBgMain
     $Container.Controls.Add($guiSection)
 
     $lblGuiTitle = New-Object System.Windows.Forms.Label
@@ -197,19 +196,48 @@ function Global:Show-SettingsViewInstallningarKonfiguration {
     $lblTheme = New-Object System.Windows.Forms.Label
     $lblTheme.Text = "Aktivt Färgtema:"
     $lblTheme.ForeColor = $Global:colorTextWhite
+    $lblTheme.AutoSize = $true
     $lblTheme.Location = New-Object System.Drawing.Point(20, 55)
     $guiSection.Controls.Add($lblTheme)
 
     $comboThemes = New-Object System.Windows.Forms.ComboBox
     $comboThemes.Location = New-Object System.Drawing.Point(160, 52)
     $comboThemes.Size = New-Object System.Drawing.Size(220, 25)
-    $comboThemes.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-    $comboThemes.Items.AddRange(@("Kriminalvården Blue", "Krimson Dark"))
+    $comboThemes.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDown
+    if ($Global:ThemeConfig.Themes) {
+        $Global:ThemeConfig.Themes.PSObject.Properties.Name | ForEach-Object { [void]$comboThemes.Items.Add($_) }
+    }
     $guiSection.Controls.Add($comboThemes)
+
+    # Färgväljare i högerkolumnen
+    $script:SelBgChild = $Global:colorBgChildForm
+    $script:SelBgMenu  = $Global:colorBgSideMenu
+    $script:SelAccent  = $Global:colorAccent
+
+    function New-ColorPickerRow($LabelText, $YPos, $InitColor) {
+        $lbl = New-Object System.Windows.Forms.Label
+        $lbl.Text = $LabelText; $lbl.ForeColor = $Global:colorTextWhite; $lbl.AutoSize = $true
+        $lbl.Location = New-Object System.Drawing.Point(430, ($YPos + 3))
+        $guiSection.Controls.Add($lbl)
+
+        $btn = New-Object System.Windows.Forms.Button
+        $btn.Location = New-Object System.Drawing.Point(560, $YPos)
+        $btn.Size = New-Object System.Drawing.Size(140, 25)
+        $btn.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+        $btn.BackColor = $InitColor
+        $btn.Text = ""
+        $guiSection.Controls.Add($btn)
+        return $btn
+    }
+
+    $btnColBg     = New-ColorPickerRow "Bakgrundsfärg:" 52  $script:SelBgChild
+    $btnColMenu   = New-ColorPickerRow "Menyfärg:"      92  $script:SelBgMenu
+    $btnColAccent = New-ColorPickerRow "Accentfärg:"    132 $script:SelAccent
 
     # Typsnittsväljare Dropdown
     $lblFontFamily = New-Object System.Windows.Forms.Label
     $lblFontFamily.Text = "Typsnitt (Font):"
+    $lblFontFamily.AutoSize = $true
     $lblFontFamily.ForeColor = $Global:colorTextWhite
     $lblFontFamily.Location = New-Object System.Drawing.Point(20, 95)
     $guiSection.Controls.Add($lblFontFamily)
@@ -224,6 +252,7 @@ function Global:Show-SettingsViewInstallningarKonfiguration {
 
     # Rubrikstorlek Dropdown
     $lblHeaderSize = New-Object System.Windows.Forms.Label
+    $lblHeaderSize.AutoSize = $true
     $lblHeaderSize.Text = "Rubrikstorlek:"
     $lblHeaderSize.ForeColor = $Global:colorTextWhite
     $lblHeaderSize.Location = New-Object System.Drawing.Point(20, 135)
@@ -239,6 +268,7 @@ function Global:Show-SettingsViewInstallningarKonfiguration {
     # Statusbar-storlek Dropdown
     $lblStatusSize = New-Object System.Windows.Forms.Label
     $lblStatusSize.Text = "Statusbar-storlek:"
+    $lblStatusSize.AutoSize = $true
     $lblStatusSize.ForeColor = $Global:colorTextWhite
     $lblStatusSize.Location = New-Object System.Drawing.Point(20, 175)
     $guiSection.Controls.Add($lblStatusSize)
@@ -250,49 +280,233 @@ function Global:Show-SettingsViewInstallningarKonfiguration {
     $comboStatusSize.Items.AddRange(@("8", "9", "10", "11", "12"))
     $guiSection.Controls.Add($comboStatusSize)
 
-    # --- AUTOSPAR-MOTOR FÖR TEMA & TYPSNITT ---
-    $SaveGuiSettings = {
-        $Path = "C:\KrimsonTools\Config\Theme.json"
-        if (Test-Path $Path) {
-            $Json = Get-Content -Raw -Path $Path | ConvertFrom-Json
-            
-            # Spara valen live till filen
-            $Json.ActiveTheme = $comboThemes.SelectedItem.ToString()
-            $Json.Typography.FontFamily = $Global:ThemeConfig.Typography.FontFamily
-            $Json.Typography.FontSizeTitle = $comboHeadersize.SelectedItem.ToString()
-            $Json.Typography.FontSizeStatus = $comboStatussize.SelectedItem.ToString()
-            $Json | ConvertTo-Json -Depth 4 | Set-Content -Path $Path -Force
-            $Global:statusLabel.Text = "Ändringarna sparades direkt i Theme.json!"
+    # --- DEL 3: FÄRGVÄLJARE, SPARA & TA BORT TEMAPROFIL ---
+    function Set-ColorPickerClick($Btn, [string]$VarName) {
+        $Btn.Add_Click({
+            $cd = New-Object System.Windows.Forms.ColorDialog
+            $cd.Color = $Btn.BackColor
+            if ($cd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+                $Btn.BackColor = $cd.Color
+                Set-Variable -Name $VarName -Value $cd.Color -Scope Script
+            }
+        }.GetNewClosure())
+    }
+    Set-ColorPickerClick $btnColBg     "SelBgChild"
+    Set-ColorPickerClick $btnColMenu   "SelBgMenu"
+    Set-ColorPickerClick $btnColAccent "SelAccent"
+
+    # Knappar för Spara och Ta bort Temaprofil (samma stil som övre rutan)
+    $btnSaveTheme = New-Object System.Windows.Forms.Button
+    $btnSaveTheme.Text = "Spara Temaprofil"
+    $btnSaveTheme.Location = New-Object System.Drawing.Point(160, 220)
+    $btnSaveTheme.Size = New-Object System.Drawing.Size(140, 32)
+    $btnSaveTheme.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnSaveTheme.BackColor = $Global:colorBgSideMenu
+    $btnSaveTheme.ForeColor = $Global:colorTextWhite
+    $guiSection.Controls.Add($btnSaveTheme)
+
+    $btnDelTheme = New-Object System.Windows.Forms.Button
+    $btnDelTheme.Text = "Ta bort Tema"
+    $btnDelTheme.Location = New-Object System.Drawing.Point(310, 220)
+    $btnDelTheme.Size = New-Object System.Drawing.Size(120, 32)
+    $btnDelTheme.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnDelTheme.BackColor = [System.Drawing.Color]::FromArgb(180, 40, 40)
+    $btnDelTheme.ForeColor = $Global:colorTextWhite
+    $guiSection.Controls.Add($btnDelTheme)
+
+    $script:CurrentFontFamily = if ($Global:ThemeConfig.Themes.($Global:ThemeConfig.ActiveTheme).FontFamily) { $Global:ThemeConfig.Themes.($Global:ThemeConfig.ActiveTheme).FontFamily } else { "Verdana" }
+    $btnPickFont.Text = "$($script:CurrentFontFamily) (Ändra...)"
+
+    $btnPickFont.Add_Click({
+        $fd = New-Object System.Windows.Forms.FontDialog
+        $fd.Font = New-Object System.Drawing.Font($script:CurrentFontFamily, 12)
+        if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $script:CurrentFontFamily = $fd.Font.Name
+            $btnPickFont.Text = "$($script:CurrentFontFamily) (Ändra...)"
+        }
+    })
+
+    # Förifyll aktuellt tema och storlekar
+    if ($Global:ThemeConfig.ActiveTheme) { $comboThemes.Text = $Global:ThemeConfig.ActiveTheme.Trim() }
+    $actT = $Global:ThemeConfig.Themes.($comboThemes.Text)
+    if ($actT) {
+        $comboHeaderSize.SelectedItem = if ($actT.FontSizeTitle)  { "$($actT.FontSizeTitle)" }  else { "14" }
+        $comboStatusSize.SelectedItem = if ($actT.FontSizeStatus) { "$($actT.FontSizeStatus)" } else { "9" }
+    }
+
+    # Byt tema direkt vid val i listan
+    $comboThemes.Add_SelectedIndexChanged({
+        $sel = $comboThemes.SelectedItem
+        if ($sel -and (Test-Path $Global:ThemeJsonPath)) {
+            $json = Get-Content -Path $Global:ThemeJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $json.ActiveTheme = $sel
+            $json | ConvertTo-Json -Depth 5 | Set-Content -Path $Global:ThemeJsonPath -Encoding UTF8 -Force
+            Load-KrimsonTheme -ThemePath $Global:ThemeJsonPath
+            Update-KrimsonUITheme
+            $tObj = $json.Themes.$sel
+            if ($tObj) {
+                $script:SelBgChild = $Global:colorBgChildForm; $btnColBg.BackColor     = $Global:colorBgChildForm
+                $script:SelBgMenu  = $Global:colorBgSideMenu;  $btnColMenu.BackColor   = $Global:colorBgSideMenu
+                $script:SelAccent  = $Global:colorAccent;      $btnColAccent.BackColor = $Global:colorAccent
+                $script:CurrentFontFamily = $tObj.FontFamily
+                $btnPickFont.Text = "$($script:CurrentFontFamily) (Ändra...)"
+                $comboHeaderSize.SelectedItem = "$($tObj.FontSizeTitle)"
+                $comboStatusSize.SelectedItem = "$($tObj.FontSizeStatus)"
+            }
+            $Global:statusLabel.Text = "Tema '$sel' aktiverat!"
+        }
+    }.GetNewClosure())
+
+    # Spara ny eller uppdatera befintlig temaprofil
+    $btnSaveTheme.Add_Click({
+        try {
+            $name = $comboThemes.Text.Trim()
+            if (-not $name) { return }
+            if ($name -eq "Kriminalvården (Default)") {
+                [System.Windows.Forms.MessageBox]::Show("Standardtemat 'Kriminalvården (Default)' är skrivskyddat.`nSkriv ett eget namn i listan för att spara en ny temaprofil!", "Skrivskyddat tema")
+                return
+            }
+
+            $tPath = if ($Global:ThemeJsonPath) { $Global:ThemeJsonPath } else { Join-Path $PSScriptRoot "..\Config\Theme.json" }
+            $json = Get-Content -Path $tPath -Raw -Encoding UTF8 | ConvertFrom-Json
+
+            $newTheme = [PSCustomObject]@{
+                BgMain         = "31,31,43"
+                BgSideMenu     = "$($btnColMenu.BackColor.R),$($btnColMenu.BackColor.G),$($btnColMenu.BackColor.B)"
+                BgChildForm    = "$($btnColBg.BackColor.R),$($btnColBg.BackColor.G),$($btnColBg.BackColor.B)"
+                AccentColor    = "$($btnColAccent.BackColor.R),$($btnColAccent.BackColor.G),$($btnColAccent.BackColor.B)"
+                BtnHover       = "45,45,60"
+                TextWhite      = "255,255,255"
+                TextGray       = "180,180,190"
+                FontFamily     = $script:CurrentFontFamily
+                FontSizeTitle  = [int]$comboHeaderSize.SelectedItem
+                FontSizeMenu   = 14
+                FontSizeStatus = [int]$comboStatusSize.SelectedItem
+            }
+            $json.Themes | Add-Member -NotePropertyName $name -NotePropertyValue $newTheme -Force
+            $json.ActiveTheme = $name
+            $json | ConvertTo-Json -Depth 5 | Set-Content -Path $tPath -Encoding UTF8 -Force
+
+            if (-not $comboThemes.Items.Contains($name)) { [void]$comboThemes.Items.Add($name) }
+            Load-KrimsonTheme -ThemePath $tPath
+            Update-KrimsonUITheme
+
+            if ($Global:statusLabel) { $Global:statusLabel.Text = "Temaprofil '$name' sparad och aktiverad!" }
+            elseif ($statusLabel)    { $statusLabel.Text = "Temaprofil '$name' sparad och aktiverad!" }
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show("Kunde inte spara tema: $_", "Fel vid sparning")
+        }
+    }.GetNewClosure())
+
+    # Ta bort temaprofil
+    $btnDelTheme.Add_Click({
+        $name = $comboThemes.Text.Trim()
+        if ($name -eq "Kriminalvården (Default)") {
+        if ($Global:statusLabel) { $Global:statusLabel.Text = "Standardtemat 'Kriminalvården (Default)' kan inte tas bort!" }
+            return
+        }
+        $json = Get-Content -Path $Global:ThemeJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $allNames = @($json.Themes.PSObject.Properties.Name)
+        if ($allNames.Count -le 1) {
+            $Global:statusLabel.Text = "Kan inte ta bort det sista temat!"
+            return
+        }
+        if ($json.Themes.PSObject.Properties[$name]) {
+            $json.Themes.PSObject.Properties.Remove($name)
+            $comboThemes.Items.Remove($name)
+            $fallback = @($json.Themes.PSObject.Properties.Name)[0]
+            $json.ActiveTheme = $fallback
+            $json | ConvertTo-Json -Depth 5 | Set-Content -Path $Global:ThemeJsonPath -Encoding UTF8 -Force
+            $comboThemes.SelectedItem = $fallback
+            $Global:statusLabel.Text = "Temaprofil '$name' borttagen."
+        }
+    }.GetNewClosure())
+
+    $guiSection.BringToFront()
+
+    # --- 4. SEKTION FÖR LOGGNING ---
+    $logSection = New-Object System.Windows.Forms.Panel
+    $logSection.Size = New-Object System.Drawing.Size(($Container.ClientSize.Width - 40), 120)
+    $logSection.Location = New-Object System.Drawing.Point(20, 650)
+    $logSection.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right)
+    $logSection.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    $logSection.BackColor = $Global:colorBgMain
+    $Container.Controls.Add($logSection)
+
+    $lblLogTitle = New-Object System.Windows.Forms.Label
+    $lblLogTitle.Text = "Loggningsinställningar:"
+    $lblLogTitle.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, 11, [System.Drawing.FontStyle]::Bold)
+    $lblLogTitle.ForeColor = $Global:colorTextWhite
+    $lblLogTitle.Location = New-Object System.Drawing.Point(20, 15)
+    $lblLogTitle.AutoSize = $true
+    $logSection.Controls.Add($lblLogTitle)
+
+    $regGlobalPath = "HKCU:\Software\KrimsonTools\Settings\Global"
+    if (-not (Test-Path $regGlobalPath)) { New-Item -Path $regGlobalPath -Force | Out-Null }
+    $globalCfg = Get-ItemProperty -Path $regGlobalPath -ErrorAction SilentlyContinue
+
+    $chkLogEnabled = New-Object System.Windows.Forms.CheckBox
+    $chkLogEnabled.Text = "Aktivera loggning till fil"
+    $chkLogEnabled.ForeColor = $Global:colorTextWhite
+    $chkLogEnabled.Location = New-Object System.Drawing.Point(20, 50)
+    $chkLogEnabled.AutoSize = $true
+    $chkLogEnabled.Checked = ($globalCfg.LogEnabled -eq "True")
+    $logSection.Controls.Add($chkLogEnabled)
+
+    $lblLogFile = New-Object System.Windows.Forms.Label
+    $lblLogFile.Text = "Loggfil (Sökväg):"
+    $lblLogFile.ForeColor = $Global:colorTextWhite
+    $lblLogFile.Location = New-Object System.Drawing.Point(20, 82)
+    $lblLogFile.AutoSize = $true
+    $logSection.Controls.Add($lblLogFile)
+
+    $txtLogFilePath = New-Object System.Windows.Forms.TextBox
+    $txtLogFilePath.Location = New-Object System.Drawing.Point(240, 79)
+    $txtLogFilePath.Size = New-Object System.Drawing.Size(($Container.ClientSize.Width - 400), 23)
+    $txtLogFilePath.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right)
+    $txtLogFilePath.Text = if ($globalCfg.LogFilePath) { $globalCfg.LogFilePath } else { (Join-Path $env:TEMP "KrimsonTool.log") }
+    $logSection.Controls.Add($txtLogFilePath)
+
+    $btnBrowseLog = New-Object System.Windows.Forms.Button
+    $btnBrowseLog.Text = "Bläddra..."
+    $btnBrowseLog.Location = New-Object System.Drawing.Point(($Container.ClientSize.Width - 150), 78)
+    $btnBrowseLog.Size = New-Object System.Drawing.Size(80, 25)
+    $btnBrowseLog.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnBrowseLog.BackColor = $Global:colorBgSideMenu
+    $btnBrowseLog.ForeColor = $Global:colorTextWhite
+    $btnBrowseLog.Anchor = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right)
+    $logSection.Controls.Add($btnBrowseLog)
+
+    $SaveLogSettings = {
+        Set-ItemProperty -Path $regGlobalPath -Name "LogEnabled"  -Value $chkLogEnabled.Checked.ToString() -Force
+        Set-ItemProperty -Path $regGlobalPath -Name "LogFilePath" -Value $txtLogFilePath.Text.Trim() -Force
+        if (Get-Command "Write-KrimsonLog" -ErrorAction SilentlyContinue) {
+            $st = if ($chkLogEnabled.Checked) { "aktiverad" } else { "inaktiverad" }
+            Write-KrimsonLog "Fil-loggning $st -> $($txtLogFilePath.Text.Trim())" -UpdateStatus
+        }
+    }.GetNewClosure()
+
+    $chkLogEnabled.Add_CheckedChanged($SaveLogSettings)
+    $txtLogFilePath.Add_Leave($SaveLogSettings)
+    $btnBrowseLog.Add_Click({
+        $sfd = New-Object System.Windows.Forms.SaveFileDialog
+        $sfd.Filter = "Loggfiler (*.log;*.txt)|*.log;*.txt|Alla filer (*.*)|*.*"
+        $sfd.FileName = [System.IO.Path]::GetFileName($txtLogFilePath.Text)
+        if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $txtLogFilePath.Text = $sfd.FileName
+            & $SaveLogSettings
+        }
+    }.GetNewClosure())
+
+    # --- 5. DYNAMISKA INSTÄLLNINGAR FRÅN AKTIVA VYER (PLUGINS) ---
+    $nextY = 790
+
+    $pluginFuncs = Get-Command -Name "Register-ViewSettings-*" -ErrorAction SilentlyContinue
+    foreach ($fn in $pluginFuncs) {
+        $addedPanel = & $fn.Name -Container $Container -StartY $nextY
+        if ($addedPanel -is [System.Windows.Forms.Control]) {
+            $nextY += $addedPanel.Height + 20
         }
     }
 
-    # Hämta värdena från den redan inlästa globala tematrafiken i stället för att läsa filen igen
-    if ($Global:ActiveTheme) { $comboThemes.SelectedItem = $Global:ActiveTheme }
-    if ($Global:ThemeConfig.Typography.FontSizeTitle) { $comboHeadersize.SelectedItem = $Global:ThemeConfig.Typography.FontSizeTitle }
-    if ($Global:ThemeConfig.Typography.FontSizeStatus) { $comboStatussize.SelectedItem = $Global:ThemeConfig.Typography.FontSizeStatus }
-
-    # Aktivera live-sparning vid klick/ändring
-    $comboThemes.Add_SelectedIndexChanged({ &$SaveGuisettings; Load-KrimsonTheme })
-    $btnPickFont.Add_Click({
-        $fontDialog = New-Object System.Windows.Forms.FontDialog
-        $fontDialog.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, 12)
-        if ($fontDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-            $Global:ThemeConfig.Typography.FontFamily = $fontDialog.Font.Name
-            $btnPickFont.Text = "$($fontDialog.Font.Name) (Ändra...)"
-            &$SaveGuisettings
-            Load-KrimsonTheme
-
-            # Uppdatera menyknapparna i gränssnittet live direkt vid klick
-            foreach ($Control in $Global:panelSideMenu.Controls) {
-                if ($Control -is [System.Windows.Forms.Button]) {
-                    $Control.Font = New-Object System.Drawing.Font($fontDialog.Font.Name, $Global:ThemeConfig.Typography.FontSizeTitle, [System.Drawing.FontStyle]::Bold)
-                    $Control.Refresh()
-                }
-            }
-        }
-    })
-    $comboHeadersize.Add_SelectedIndexChanged({ &$SaveGuisettings; Load-KrimsonTheme })
-    $comboStatussize.Add_SelectedIndexChanged({ &$SaveGuisettings; Load-KrimsonTheme })
-
-    $guiSection.BringToFront()
 }

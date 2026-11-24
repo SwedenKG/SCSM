@@ -12,12 +12,189 @@ if (-not $ScriptRoot) {
 $ConfigFolder = Join-Path $ScriptRoot "Config"
 $ViewsFolder  = Join-Path $ScriptRoot "Views"
 $LogoJsonPath = Join-Path $ConfigFolder "Logo.json"
-$ThemeJsonPath = Join-Path $ConfigFolder "Theme.json"
+$Global:ThemeJsonPath = Join-Path $ConfigFolder "Theme.json"
+
+# --- LÅS IN LOKAL SMLETS-MODUL (INGEN SYSTEM-FALLBACK) ---
+$localSMLetsPath = Join-Path $ScriptRoot "SMLets\SMLets.psd1"
+if (-not (Test-Path $localSMLetsPath)) {
+    $localSMLetsPath = Join-Path $ScriptRoot "SMLets\SMLets.psm1"
+}
+
+if (Test-Path $localSMLetsPath) {
+    Get-Module -Name SMLets | Remove-Module -Force -ErrorAction SilentlyContinue
+    Import-Module -Name $localSMLetsPath -Force -Global -ErrorAction Stop
+    $Global:LocalSMLetsLoaded = $true
+} else {
+    $Global:LocalSMLetsLoaded = $false
+    [System.Windows.Forms.MessageBox]::Show(
+        "Kunde inte hitta lokal SMLets i:" + [Environment]::NewLine + "$ScriptRoot\SMLets\" + [Environment]::NewLine + [Environment]::NewLine + "Verktyget kräver den lokala SMLets-modulen.",
+        "SMLets saknas",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Warning
+    )
+}
+
+function Global:Invoke-KrimsonSql {
+    param(
+        [Parameter(Mandatory=$true)][string]$Query,
+        [string]$ProfileName,
+        [string]$SqlServer,
+        [string]$Database
+    )
+
+    if (-not $SqlServer -or -not $Database) {
+        $regBase = "HKCU:\Software\KrimsonTools\Settings"
+                if (-not $ProfileName) {
+            $ProfileName = (Get-ItemProperty -Path "HKCU:\Software\KrimsonTools" -ErrorAction SilentlyContinue).LastActiveEnvironment
+            if (-not $ProfileName) { $ProfileName = (Get-ItemProperty -Path "$regBase\Global" -ErrorAction SilentlyContinue).AktivProfil }
+        }
+        if (-not $ProfileName) { throw "Ingen miljöprofil är vald." }
+
+        $profData = Get-ItemProperty -Path "$regBase\MiljoProfiler\$ProfileName" -ErrorAction SilentlyContinue
+        if (-not $SqlServer) { $SqlServer = $profData.SCSM_SQL }
+        if (-not $Database)  { $Database  = $profData.SCSM_DB }
+    }
+
+    if (-not $SqlServer -or -not $Database) {
+        throw "SQL Server eller Databas saknas för profilen '$ProfileName'."
+    }
+
+    Write-KrimsonLog "Kör SQL mot [$SqlServer].[$Database] (Profil: $ProfileName)..."
+    $connStr = "Server=$SqlServer;Database=$Database;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=3;"
+    $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
+    $cmd  = New-Object System.Data.SqlClient.SqlCommand($Query, $conn)
+    $da   = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
+    $dt   = New-Object System.Data.DataTable
+
+    try {
+        $conn.Open()
+        [void]$da.Fill($dt)
+        Write-KrimsonLog "SQL slutförd: $($dt.Rows.Count) rader hämtade."
+        return $dt
+    } catch {
+        Write-KrimsonLog "SQL-fel mot [$SqlServer].[$Database]: $($_.Exception.Message)" -UpdateStatus
+        throw
+    } finally {
+        $conn.Close()
+        $cmd.Dispose()
+        $conn.Dispose()
+    }
+
+}
+
+$Global:LogBuffer = New-Object System.Text.StringBuilder
+
+function Global:Write-KrimsonLog {
+    param(
+        [Parameter(Mandatory=$true)][string]$Message,
+        [switch]$UpdateStatus
+    )
+
+    $ts = [DateTime]::Now.ToString("yyyy-MM-dd HH:mm:ss")
+    $logLine = "[$ts] $Message"
+    [void]$Global:LogBuffer.AppendLine($logLine)
+
+    if ($Global:txtLogView -and -not $Global:txtLogView.IsDisposed) {
+        $Global:txtLogView.AppendText($logLine + [Environment]::NewLine)
+    }
+
+    if ($UpdateStatus -and $Global:statusLabel) {
+        $Global:statusLabel.Text = $Message
+    }
+
+    $regGlobal = "HKCU:\Software\KrimsonTools\Settings\Global"
+    $gCfg = Get-ItemProperty -Path $regGlobal -ErrorAction SilentlyContinue
+    if ($gCfg.LogEnabled -eq "True" -and $gCfg.LogFilePath) {
+        try {
+            $logDir = Split-Path -Path $gCfg.LogFilePath -Parent
+            if ($logDir -and -not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+            Add-Content -Path $gCfg.LogFilePath -Value $logLine -Encoding UTF8 -ErrorAction SilentlyContinue
+        } catch {}
+    }
+}
+
+function Global:Show-KrimsonLogView {
+    if (-not $Global:panelChildForm) { return }
+
+    # Om loggpanelen redan finns -> ta bort den och visa underliggande vy (Inställningar, Prepare osv.) direkt!
+    $existingLog = $Global:panelChildForm.Controls["pnlKrimsonLogOverlay"]
+    if ($existingLog) {
+        $Global:panelChildForm.Controls.Remove($existingLog)
+        $existingLog.Dispose()
+        if ($lblTitle -and $Script:SavedLogPrevTitle) { $lblTitle.Text = $Script:SavedLogPrevTitle }
+        return
+    }
+
+    if ($lblTitle) {
+        $Script:SavedLogPrevTitle = $lblTitle.Text
+        $lblTitle.Text = "Intern Händelselogg"
+    }
+
+    $pnlLog = New-Object System.Windows.Forms.Panel
+    $pnlLog.Name = "pnlKrimsonLogOverlay"
+    $pnlLog.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $pnlLog.BackColor = $Global:colorBgMain
+    $Global:panelChildForm.Controls.Add($pnlLog)
+    $pnlLog.BringToFront()
+
+    $panelWidth  = $pnlLog.ClientSize.Width - 40
+    $panelHeight = $pnlLog.ClientSize.Height - 75
+    $anchorAll   = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right)
+
+    $btnCopyLog = New-Object System.Windows.Forms.Button
+    $btnCopyLog.Text = "Kopiera logg"
+    $btnCopyLog.Location = New-Object System.Drawing.Point(20, 15)
+    $btnCopyLog.Size = New-Object System.Drawing.Size(130, 28)
+    $btnCopyLog.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnCopyLog.BackColor = $Global:colorBgSideMenu
+    $btnCopyLog.ForeColor = $Global:colorTextWhite
+    $pnlLog.Controls.Add($btnCopyLog)
+
+    $btnOpenLogFile = New-Object System.Windows.Forms.Button
+    $btnOpenLogFile.Text = "Öppna loggfil"
+    $btnOpenLogFile.Location = New-Object System.Drawing.Point(165, 15)
+    $btnOpenLogFile.Size = New-Object System.Drawing.Size(130, 28)
+    $btnOpenLogFile.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnOpenLogFile.BackColor = $Global:colorBgSideMenu
+    $btnOpenLogFile.ForeColor = $Global:colorTextWhite
+    $pnlLog.Controls.Add($btnOpenLogFile)
+
+    $btnClearLog = New-Object System.Windows.Forms.Button
+    $btnClearLog.Text = "Rensa vy"
+    $btnClearLog.Location = New-Object System.Drawing.Point(310, 15)
+    $btnClearLog.Size = New-Object System.Drawing.Size(110, 28)
+    $btnClearLog.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnClearLog.BackColor = $Global:colorBgSideMenu
+    $btnClearLog.ForeColor = $Global:colorTextWhite
+    $pnlLog.Controls.Add($btnClearLog)
+
+    $Global:txtLogView = New-Object System.Windows.Forms.TextBox
+    $Global:txtLogView.Location = New-Object System.Drawing.Point(20, 52)
+    $Global:txtLogView.Size = New-Object System.Drawing.Size($panelWidth, $panelHeight)
+    $Global:txtLogView.Anchor = $anchorAll
+    $Global:txtLogView.Multiline = $true
+    $Global:txtLogView.ReadOnly = $true
+    $Global:txtLogView.ScrollBars = "Both"
+    $Global:txtLogView.WordWrap = $false
+    $Global:txtLogView.BackColor = $Global:colorBgMain
+    $Global:txtLogView.ForeColor = $Global:colorTextWhite
+    $Global:txtLogView.Font = New-Object System.Drawing.Font("Consolas", 9.5)
+    $Global:txtLogView.Text = $Global:LogBuffer.ToString()
+    $pnlLog.Controls.Add($Global:txtLogView)
+
+    $btnCopyLog.Add_Click({ if ($Global:txtLogView.Text) { [System.Windows.Forms.Clipboard]::SetText($Global:txtLogView.Text) } }.GetNewClosure())
+    $btnClearLog.Add_Click({ [void]$Global:LogBuffer.Clear(); $Global:txtLogView.Clear() }.GetNewClosure())
+    $btnOpenLogFile.Add_Click({
+        $f = (Get-ItemProperty "HKCU:\Software\KrimsonTools\Settings\Global" -ErrorAction SilentlyContinue).LogFilePath
+        if ($f -and (Test-Path $f)) { Start-Process notepad.exe "`"$f`"" } else { [System.Windows.Forms.MessageBox]::Show("Ingen loggfil hittades på: $f", "Loggfil") }
+    }.GetNewClosure())
+}
+
 
 # ============================================================================
 # 2. CENTRALt FÄRGTEMA (Läser teman live från Config\Theme.json)
 # ============================================================================
-function Load-KrimsonTheme {
+function Global:Load-KrimsonTheme {
     param([string]$ThemePath)
     if (-not $ThemePath) { $ThemePath = Join-Path $PSScriptRoot "Config\Theme.json" }
 
@@ -52,6 +229,14 @@ function Load-KrimsonTheme {
                 $Global:ColorBtnHover      = Get-ColorObject $SelectedTheme.BtnHover
                 $Global:ColorTextWhite     = Get-ColorObject $SelectedTheme.TextWhite
                 $Global:ColorTextGray      = Get-ColorObject $SelectedTheme.TextGray
+                if (-not $Global:ThemeConfig.Typography) {
+                    $Global:ThemeConfig | Add-Member -NotePropertyName "Typography" -NotePropertyValue ([PSCustomObject]@{
+                        FontFamily     = if ($SelectedTheme.FontFamily)     { $SelectedTheme.FontFamily }     else { "Verdana" }
+                        FontSizeTitle  = if ($SelectedTheme.FontSizeTitle)  { $SelectedTheme.FontSizeTitle }  else { 14 }
+                        FontSizeMenu   = if ($SelectedTheme.FontSizeMenu)   { $SelectedTheme.FontSizeMenu }   else { 14 }
+                        FontSizeStatus = if ($SelectedTheme.FontSizeStatus) { $SelectedTheme.FontSizeStatus } else { 9 }
+                    }) -Force
+                }
             }
         } catch {
             Write-Warning "Kunde inte tolka Theme.json, använder standardfärgerna."
@@ -59,8 +244,28 @@ function Load-KrimsonTheme {
     }
 }
 
+function Global:Update-KrimsonUITheme {
+    if ($Global:panelChildForm) { $Global:panelChildForm.BackColor = $Global:colorBgChildForm }
+    if ($panelHeader)           { $panelHeader.BackColor           = $Global:colorBgSideMenu }
+    if ($statusStrip)           { $statusStrip.BackColor           = $Global:colorAccent }
+    if ($lblTitle)              { $lblTitle.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, [float]$Global:ThemeConfig.Typography.FontSizeTitle, [System.Drawing.FontStyle]::Bold) }
+    if ($statusLabel)           { $statusLabel.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, [float]$Global:ThemeConfig.Typography.FontSizeStatus) }
+    if ($panelSideMenu) {
+        $panelSideMenu.BackColor = $Global:colorBgSideMenu
+        foreach ($ctrl in $panelSideMenu.Controls) {
+            if ($ctrl -is [System.Windows.Forms.Button]) {
+                $ctrl.BackColor = $Global:colorBgSideMenu
+                $ctrl.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, [float]$Global:ThemeConfig.Typography.FontSizeMenu)
+            }
+            elseif ($ctrl -is [System.Windows.Forms.Label]) {
+                $ctrl.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, [float]$Global:ThemeConfig.Typography.FontSizeTitle)
+            }
+        }
+    }
+}
+
 # Starta färgerna direkt
-Load-KrimsonTheme -ThemePath $ThemeJsonPath
+Load-KrimsonTheme -ThemePath $Global:ThemeJsonPath
 
 # Global lista för aktiva moduler
 $Global:LoadedViews = [System.Collections.Generic.List[Object]]::new()
@@ -76,27 +281,16 @@ if (Test-Path $ViewsFolder) {
             if (Get-Command "Get-ViewConfig" -ErrorAction SilentlyContinue) {
                 $Config = Get-ViewConfig
                 if ($Config.Enabled -eq $true) {
-                    $cleanMain = $Config.MainMenu -replace '[åäåÅÄÖ]','a' -replace '\s+',''
-                    $cleanSub  = $Config.SubMenu -replace '[åäåÅÄÖ]','a' -replace '\s+',''
-                    $UniqueSuffix = "${cleanMain}_${cleanSub}"
-
-                    if (Test-Path "Function:\Show-SettingsView") {
-                        Rename-Item Function:\Show-SettingsView -NewName "Global:Show-SettingsView-$UniqueSuffix" -Force
-                    }
-                    if (Test-Path "Function:\Show-MainView") {
-                        Rename-Item Function:\Show-MainView -NewName "Global:Show-MainView-$UniqueSuffix" -Force
-                    }
-
                     $viewData = [PSCustomObject]@{
-                        MainMenu       = $Config.MainMenu
-                        MainMenuPrio   = [int]$Config.MainMenuPrio
-                        SubMenu        = $Config.SubMenu
-                        SubMenuPrio    = [int]$Config.SubMenuPrio
-                        StatusText     = $Config.StatusText
-                        SettingsFunc   = "Show-SettingsView-$UniqueSuffix"
-                        MainFunc       = "Show-MainView-$UniqueSuffix"
+                        MainMenu     = $Config.MainMenu
+                        MainMenuPrio = [int]$Config.MainMenuPrio
+                        SubMenu      = $Config.SubMenu
+                        SubMenuPrio  = [int]$Config.SubMenuPrio
+                        StatusText   = $Config.StatusText
+                        SettingsFunc = $Config.SettingsFunc
+                        MainFunc     = $Config.MainFunc
                     }
-                    $Global:LoadedViews.Add($ViewData)
+                    $Global:LoadedViews.Add($viewData)
                 }
                 Remove-Item Function:\Get-ViewConfig -ErrorAction SilentlyContinue
             }
@@ -137,7 +331,7 @@ $panelHeader.BackColor = $Global:colorBgSideMenu
 
 $lblTitle = New-Object System.Windows.Forms.Label
 $lblTitle.Text = ""
-$lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 14, [System.Drawing.FontStyle]::Bold)
+$lblTitle.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, [float]$Global:ThemeConfig.Typography.FontSizeTitle, [System.Drawing.FontStyle]::Bold)
 $lblTitle.ForeColor = $Global:ColorTextWhite
 $lblTitle.Location = New-Object System.Drawing.Point(15, 8)
 $lblTitle.AutoSize = $true
@@ -166,6 +360,14 @@ $statusStrip.Items.Add($statusLabel) | Out-Null
 $springLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
 $springLabel.Spring = $true
 $statusStrip.Items.Add($springLabel) | Out-Null
+
+$Global:statusLabel = $statusLabel
+$springLabel.DoubleClickEnabled = $true
+$statusLabel.DoubleClickEnabled = $true
+$springLabel.Add_MouseEnter({ $Script:prevStatus = $statusLabel.Text; $statusLabel.Text = "[Dubbelklicka för Händelselogg]" })
+$springLabel.Add_MouseLeave({ if ($Script:prevStatus) { $statusLabel.Text = $Script:prevStatus } })
+$springLabel.Add_DoubleClick({ Show-KrimsonLogView })
+$statusLabel.Add_DoubleClick({ Show-KrimsonLogView })
 
 # 3. Skapa själva dropdown-menyn för statusraden
 $Global:comboStatusMiljo = New-Object System.Windows.Forms.ComboBox
@@ -236,46 +438,38 @@ if ($logoImage -ne $null) {
     $pictureBoxLogo.Cursor = [System.Windows.Forms.Cursors]::Hand
     
     # HÄNDELSE: När man klickar på Loggan öppnas inställningarna i ChildFormuläret!
-    $PictureBoxLogo.Add_DoubleClick({
-        $RegKey = "HKCU:\Software\KrimsonTools"
-        $CurrentActive = Get-ItemProperty -Path $RegKey -Name "LastActiveView" -ErrorAction SilentlyContinue
+    $Global:LastActiveView  = ""
+    $Global:LastActiveTitle = ""
+    $pictureBoxLogo.Add_DoubleClick({
 
-        # Hämta aktuell rubrik live från fönstret
         $CurrentTitle = ""
-        if ($lblTitle -and $lblTitle.Text) { 
-            $CurrentTitle = $lblTitle.Text 
+        if ($lblTitle -and $lblTitle.Text) {
+            $CurrentTitle = $lblTitle.Text
         }
 
         # VÄXLINGSFUNKTION (TOGGLE): OM RUBRIKEN REDAN ÄR INSTÄLLNINGAR -> SKICKA TILLBAKA TEKNIKERN
         if ($CurrentTitle -eq "Inställningar") {
-            if ($CurrentActive -and $CurrentActive.LastActiveView) {
-                $TargetFunc = $CurrentActive.LastActiveView
-                if (Get-Command $TargetFunc -ErrorAction SilentlyContinue) {
-                    $statusLabel.Text = "Återgår till föregående vy..."
-                    & $TargetFunc
-                }
+            if ($Global:LastActiveView -and (Get-Command $Global:LastActiveView -ErrorAction SilentlyContinue)) {
+                $lblTitle.Text = $Global:LastActiveTitle
+                $statusLabel.Text = "Återgår till föregående vy..."
+                & $Global:LastActiveView
             } else {
-                # Fallback om registret är tomt: Skicka till Ärenden
-                if (Get-Command "Show-MainViewDailyTickets" -ErrorAction SilentlyContinue) {
-                    Show-MainViewDailyTickets
-                }
+                # Var på startläget (tomt fönster) -> rensa tillbaka till tomt startläge
+                $lblTitle.Text = ""
+                $statusLabel.Text = "Redo"
+                if ($Global:panelChildForm) { $Global:panelChildForm.Controls.Clear() }
             }
-        } 
-        # VÄXLINGSFUNKTION (TOGGLE): OM VI STÅR I EN SCSM-VY -> SPARA VY-NAMNET OCH ÖPPNA INSTÄLLNINGARNA
-        else {
-            if ($Global:CurrentActiveViewFunctionName) {
-            if (-not (Test-Path $RegKey)) { New-Item -Path $RegKey -Force | Out-Null }
-                Set-ItemProperty -Path $RegKey -Name "LastActiveView" -Value $Global:CurrentActiveViewFunctionName -Force
         }
-            
+        else {
             # Sätt rätt topprubrik och status
             $lblTitle.Text = "Inställningar"
             $statusLabel.Text = "Öppnar konfiguration..."
-            
+
             # Anropa den modulära inställningsvyn från View-Settings.ps1
             Show-SettingsViewInstallningarKonfiguration
-    }
+        }
     })
+
     $panelSideMenu.Controls.Add($pictureBoxLogo)
 }
 
@@ -289,52 +483,69 @@ foreach ($View in $Global:SortedViews) {
         $lblHeader = New-Object System.Windows.Forms.Label
         $lblHeader.Text = $View.MainMenu
         $lblHeader.ForeColor = $Global:colorTextWhite
-        $lblHeader.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, $Global:ThemeConfig.Typography.FontSizeTitle)
+        $lblHeader.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, [float]$Global:ThemeConfig.Typography.FontSizeTitle)
         $lblHeader.AutoSize = $true
         $panelSideMenu.Controls.Add($lblHeader)
-
+        $lblHeader.Tag = $View.MainMenu
         $LastMainMenu = $View.MainMenu
 
-        $lblHeader.Add_Click({
-            # Återställ alla andra rubriker till vit textfärg först
-            foreach ($Control in $panelSideMenu.Controls) {
-                if ($Control -is [System.Windows.Forms.Label]) { $Control.ForeColor = $Global:colorTextWhite }
+    $ToggleMainMenu = {
+        param($sender, $e)
+        $CurrentMenu = $sender.Tag
+        $IsNowExpanded = $false
+
+        # Växla synlighet på den klickade menyns underknappar, och stäng alla andra menyer
+        foreach ($Control in $panelSideMenu.Controls) {
+            if ($Control -is [System.Windows.Forms.Button]) {
+                if ($Control.Tag.MainMenu -eq $CurrentMenu) {
+                    $Control.Visible = -not $Control.Visible
+                    $IsNowExpanded = $Control.Visible
+                } else {
+                    $Control.Visible = $false
+                }
             }
-        
-            # Tänd den klickade rubriken med sparad AccentColor från JSON
+        }
+
+        # Återställ alla rubriker till vit textfärg först
+        foreach ($Control in $panelSideMenu.Controls) {
+            if ($Control -is [System.Windows.Forms.Label]) {
+                $Control.ForeColor = $Global:colorTextWhite
+            }
+        }
+
+        # Tänd endast den klickade rubriken med AccentColor om undermenyn nu är utfälld
+        if ($IsNowExpanded) {
             $ActiveName = $Global:ThemeConfig.ActiveTheme
             if ($Global:ThemeConfig.Themes."$ActiveName".AccentColor) {
                 $AccentRGB = $Global:ThemeConfig.Themes."$ActiveName".AccentColor.Split(',')
-                $this.ForeColor = [System.Drawing.Color]::FromArgb($AccentRGB[0], $AccentRGB[1], $AccentRGB[2])
+                $sender.ForeColor = [System.Drawing.Color]::FromArgb($AccentRGB[0], $AccentRGB[1], $AccentRGB[2])
             }
+        }
 
-            # Hitta alla knappar som tillhör just denna huvudmeny och växla deras synlighet
-            $CurrentMenu = $View.MainMenu
-            foreach ($Control in $panelSideMenu.Controls) {
-                if ($Control -is [System.Windows.Forms.Button]) {
-                    if ($Control.Tag -eq $CurrentMenu) { $Control.Visible = -not $Control.Visible }
-                }
-            }
-            $panelSideMenu.PerformLayout()
-        })
+        $panelSideMenu.PerformLayout()
+    }
+
+    $lblHeader.Add_Click($ToggleMainMenu)
+    $lblHeader.Add_DoubleClick($ToggleMainMenu)
+
     }
     
     $btnMenu = New-Object System.Windows.Forms.Button
     $btnMenu.Text = "  " + $View.SubMenu
+    $btnMenu.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
     $btnMenu.Size = New-Object System.Drawing.Size(155, 30)
     $btnMenu.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $btnMenu.FlatAppearance.BorderSize = 0
     $btnMenu.ForeColor = $Global:colorTextWhite
-    $btnMenu.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $btnMenu.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, $Global:ThemeConfig.Typography.FontSizeTitle)
+    $btnMenu.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, [float]$Global:ThemeConfig.Typography.FontSizeTitle)
     $btnMenu.BackColor = $Global:ColorBgSideMenu
     $btnMenu.Visible = ($View.SubMenu -eq $View.MainMenu)
-    $btnMenu.Tag = $View.MainMenu
+    $btnMenu.Tag = $View
     $panelSideMenu.Controls.Add($btnMenu)
 
     $btnMenu.Add_MouseEnter({
         $this.BackColor = $Global:ColorBtnHover
-        $statusLabel.Text = $View.StatusText
+        $statusLabel.Text = $this.Tag.StatusText
     })
     $btnMenu.Add_MouseLeave({
         $this.BackColor = $Global:ColorBgSideMenu
@@ -343,40 +554,40 @@ foreach ($View in $Global:SortedViews) {
     
     $btnMenu.Add_Click({
         param($sender, $e)
-        $lblTitle.Text = "$($View.MainMenu) - $($View.SubMenu)"
-        $lblTitle.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, $Global:ThemeConfig.Typography.FontSizeTitle)
+        $ClickedView = $sender.Tag
+        $lblTitle.Text = "$($ClickedView.MainMenu) - $($ClickedView.SubMenu)"
+        $lblTitle.Font = New-Object System.Drawing.Font($Global:ThemeConfig.Typography.FontFamily, [float]$Global:ThemeConfig.Typography.FontSizeTitle)
         $Global:panelChildForm.Controls.Clear()
 
-        # --- ÅTERSTÄLL MENYFÄRGER OCH KOLLAPSA (Från gamla Tools.ps1) ---
-        # Återställ alla huvudmenyer till den sparade textfärgen från JSON
+        # --- ÅTERSTÄLL MENYFÄRGER OCH KOLLAPSA UNDERMENY ---
+        # 1. Återställ alla huvudrubriker (Label) och knappar (Button) till vit textfärg
         foreach ($Control in $panelSideMenu.Controls) {
-            if ($Control -is [System.Windows.Forms.Button]) {
+            if ($Control -is [System.Windows.Forms.Label] -or $Control -is [System.Windows.Forms.Button]) {
                 $Control.ForeColor = $Global:colorTextWhite
             }
         }
 
-        # Sätt den klickade menyn till AccentColor (Orange/Vald färg) från JSON
-        if ($Global:ThemeConfig.Themes."$($Global:ThemeConfig.ActiveTheme)".AccentColor) {
-            $AccentRGB = $Global:ThemeConfig.Themes."$($Global:ThemeConfig.ActiveTheme)".AccentColor.Split(',')
-            $sender.ForeColor = [System.Drawing.Color]::FromArgb($AccentRGB[0], $AccentRGB[1], $AccentRGB[2])
+        # 2. Om vi klickar på ett undermenyval (t.ex. Tickets), kollapsa alla underknappar under den huvudmenyn
+        if ($ClickedView.SubMenu -ne $ClickedView.MainMenu) {
+            foreach ($Control in $panelSideMenu.Controls) {
+                if ($Control -is [System.Windows.Forms.Button] -and $Control.Tag.MainMenu -eq $ClickedView.MainMenu) {
+                    $Control.Visible = $false
+                }
+            }
+            $panelSideMenu.PerformLayout()
         }
-
-        # Om vi klickar på själva undermenyvalet (t.ex. Ärenden), stäng undermenyn och återställ till textfärg
-        if ($View.SubMenu -ne $View.MainMenu) {
-            # Dölj panelen för undermenyn (Dynamiskt baserat på namnet från din gamla kod)
-            Get-Variable -Name "panelSubMenu$($View.MainMenu)" -ValueOnly -ErrorAction SilentlyContinue | ForEach-Object { $_.Visible = $false }
         
-        # Sätt färgen tillbaka till den sparade textfärgen eftersom vi har gjort vårt val
-        $sender.ForeColor = $Global:colorTextWhite
-        }
+        # Spara att vi inte är i Settings och kom ihåg senaste vy i minne + register
+        $Global:IsSettingsOpen = $false
+        $Global:LastActiveView = $ClickedView.MainFunc
+        $Global:LastActiveTitle = "$($ClickedView.MainMenu) - $($ClickedView.SubMenu)"
 
         # Kör den globala funktionen trådsäkert och modulärt
-        if (Get-Command $View.MainFunc -ErrorAction SilentlyContinue) {
-            & $View.MainFunc
+        if (Get-Command $ClickedView.MainFunc -ErrorAction SilentlyContinue) {
+            & $ClickedView.MainFunc
         }
     })
     
-    $panelSideMenu.Controls.Add($btnMenu)
     $ButtonY += 35
 }
 
@@ -391,8 +602,6 @@ $KrimsonForm.Add_FormClosing({
     [System.GC]::WaitForPendingFinalizers()
 })
 
-# --- LÄS IN FÄRGER OCH STORLEKAR FRÅN JSON INNAN START ---
-Load-KrimsonTheme
-
 # --- STARTA GRÄNSSNITTET (Denna saknas längst ner i din fil!) ---
+Write-KrimsonLog "$($KrimsonForm.Text) startat."
 $KrimsonForm.ShowDialog() | Out-Null

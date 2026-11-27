@@ -44,7 +44,7 @@ function Global:Show-SettingsViewInstallningarKonfiguration {
     $comboProfiles = New-Object System.Windows.Forms.ComboBox
     $comboProfiles.Location = New-Object System.Drawing.Point(160, 52)
     $comboProfiles.Size = New-Object System.Drawing.Size(220, 25)
-    $comboProfiles.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    $comboProfiles.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDown
     $profileSection.Controls.Add($comboProfiles)
 
     # Textruta 1: SCSM Server
@@ -139,37 +139,42 @@ function Global:Show-SettingsViewInstallningarKonfiguration {
                 $Global:statusLabel.Text = "Ny profil: '$selectedEnv'."
             }
         }
-    })
+    }.GetNewClosure())
 
     $btnSaveProfile.Add_Click({
-        if ($comboProfiles.SelectedItem) {
-            $env = $comboProfiles.SelectedItem.ToString()
+    $env = $comboProfiles.Text.Trim()
+        if (-not [string]::IsNullOrWhiteSpace($env)) {
             $regPath = "HKCU:\Software\KrimsonTools\Settings\MiljoProfiler\$env"
             if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
-            
+
             Set-ItemProperty -Path $regPath -Name "SCSM_Server" -Value $Global:txtScsmServer.Text -Force
             Set-ItemProperty -Path $regPath -Name "SCSM_SQL" -Value $Global:txtScsmSql.Text -Force
             Set-ItemProperty -Path $regPath -Name "SCSM_DB" -Value $Global:txtScsmDb.Text -Force
+            if (-not $comboProfiles.Items.Contains($env)) { [void]$comboProfiles.Items.Add($env) }
+            $comboProfiles.SelectedItem = $env
             $Global:statusLabel.Text = "Inställningarna sparade för profilen '$env'!"
+            if (Get-Command Write-KrimsonLog -ErrorAction SilentlyContinue) { Write-KrimsonLog "Miljöprofil '$env' sparad." }
         }
-    })
+    }.GetNewClosure())
 
     $btnDeleteProfile.Add_Click({
-        if ($comboProfiles.SelectedItem) {
-            $env = $comboProfiles.SelectedItem.ToString()
+    $env = $comboProfiles.Text.Trim()
+        if (-not [string]::IsNullOrWhiteSpace($env)) {
             $msgBox = [System.Windows.Forms.MessageBox]::Show("Vill du verkligen ta bort profilen '$env'?", "Bekräfta radering", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning)
             if ($msgBox -eq [System.Windows.Forms.DialogResult]::Yes) {
                 $regPath = "HKCU:\Software\KrimsonTools\Settings\MiljoProfiler\$env"
                 if (Test-Path $regPath) { Remove-Item -Path $regPath -Recurse -Force | Out-Null }
-                
-                $Global:statusLabel.Text = "Profil '$env' raderad."
+
+                if ($comboProfiles.Items.Contains($env)) { $comboProfiles.Items.Remove($env) }
                 $Global:txtScsmServer.Text = ""
                 $Global:txtScsmSql.Text    = ""
                 $Global:txtScsmDb.Text     = ""
-                &$RefreshProfiles
+                if ($comboProfiles.Items.Count -gt 0) { $comboProfiles.SelectedIndex = 0 } else { $comboProfiles.Text = "" }
+                $Global:statusLabel.Text = "Profil '$env' raderad."
+                if (Get-Command Write-KrimsonLog -ErrorAction SilentlyContinue) { Write-KrimsonLog "Miljöprofil '$env' raderad." }
             }
         }
-    })
+    }.GetNewClosure())
 
     # Initiera data live
     &$RefreshProfiles

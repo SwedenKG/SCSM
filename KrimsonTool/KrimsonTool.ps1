@@ -121,25 +121,41 @@ function Global:Show-KrimsonLogView {
     if ($existingLog) {
         $Global:panelChildForm.Controls.Remove($existingLog)
         $existingLog.Dispose()
+        if ($Script:SavedAutoScrollMinSize) { $Global:panelChildForm.AutoScrollMinSize = $Script:SavedAutoScrollMinSize }
+        $Global:panelChildForm.AutoScroll = $true
         if ($lblTitle -and $Script:SavedLogPrevTitle) { $lblTitle.Text = $Script:SavedLogPrevTitle }
         return
     }
 
-    if ($lblTitle) {
-        $Script:SavedLogPrevTitle = $lblTitle.Text
-        $lblTitle.Text = "Intern Händelselogg"
-    }
+    $Script:SavedAutoScrollMinSize = $Global:panelChildForm.AutoScrollMinSize
+    $Global:panelChildForm.AutoScroll = $false
+    $Global:panelChildForm.AutoScrollMinSize = New-Object System.Drawing.Size(0, 0)
 
     $pnlLog = New-Object System.Windows.Forms.Panel
     $pnlLog.Name = "pnlKrimsonLogOverlay"
     $pnlLog.Dock = [System.Windows.Forms.DockStyle]::Fill
     $pnlLog.BackColor = $Global:colorBgMain
+    $pnlLog.Padding = New-Object System.Windows.Forms.Padding(20, 55, 20, 35)
     $Global:panelChildForm.Controls.Add($pnlLog)
     $pnlLog.BringToFront()
 
-    $panelWidth  = $pnlLog.ClientSize.Width - 40
-    $panelHeight = $pnlLog.ClientSize.Height - 75
-    $anchorAll   = ([System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right)
+    $pnlLogFrame = New-Object System.Windows.Forms.Panel
+    $pnlLogFrame.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $pnlLogFrame.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    $pnlLogFrame.BackColor = $Global:colorBgMain
+    $pnlLog.Controls.Add($pnlLogFrame)
+
+    $Global:txtLogView = New-Object System.Windows.Forms.TextBox
+    $Global:txtLogView.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $Global:txtLogView.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+    $Global:txtLogView.Multiline = $true
+    $Global:txtLogView.ReadOnly = $true
+    $Global:txtLogView.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
+    $Global:txtLogView.WordWrap = $true
+    $Global:txtLogView.BackColor = $Global:colorBgMain
+    $Global:txtLogView.ForeColor = $Global:colorTextWhite
+    $Global:txtLogView.Font = New-Object System.Drawing.Font("Consolas", 9.5)
+    $pnlLogFrame.Controls.Add($Global:txtLogView)
 
     $btnCopyLog = New-Object System.Windows.Forms.Button
     $btnCopyLog.Text = "Kopiera logg"
@@ -168,19 +184,7 @@ function Global:Show-KrimsonLogView {
     $btnClearLog.ForeColor = $Global:colorTextWhite
     $pnlLog.Controls.Add($btnClearLog)
 
-    $Global:txtLogView = New-Object System.Windows.Forms.TextBox
-    $Global:txtLogView.Location = New-Object System.Drawing.Point(20, 52)
-    $Global:txtLogView.Size = New-Object System.Drawing.Size($panelWidth, $panelHeight)
-    $Global:txtLogView.Anchor = $anchorAll
-    $Global:txtLogView.Multiline = $true
-    $Global:txtLogView.ReadOnly = $true
-    $Global:txtLogView.ScrollBars = "Both"
-    $Global:txtLogView.WordWrap = $false
-    $Global:txtLogView.BackColor = $Global:colorBgMain
-    $Global:txtLogView.ForeColor = $Global:colorTextWhite
-    $Global:txtLogView.Font = New-Object System.Drawing.Font("Consolas", 9.5)
     $Global:txtLogView.Text = $Global:LogBuffer.ToString()
-    $pnlLog.Controls.Add($Global:txtLogView)
 
     $btnCopyLog.Add_Click({ if ($Global:txtLogView.Text) { [System.Windows.Forms.Clipboard]::SetText($Global:txtLogView.Text) } }.GetNewClosure())
     $btnClearLog.Add_Click({ [void]$Global:LogBuffer.Clear(); $Global:txtLogView.Clear() }.GetNewClosure())
@@ -291,10 +295,17 @@ if (Test-Path $ViewsFolder) {
                         MainFunc     = $Config.MainFunc
                     }
                     $Global:LoadedViews.Add($viewData)
+                    Write-KrimsonLog "Laddade vy: $($Config.MainMenu) - $($Config.SubMenu) ($($File.Name))"
+                } elseif ($File.Name -eq "View-Settings.ps1") {
+                    Write-KrimsonLog "Laddade systemvy: $($File.Name)"
+                } else {
+                    if ($Config.MainFunc) { Remove-Item "Function:\$($Config.MainFunc)" -ErrorAction SilentlyContinue }
+                    Write-KrimsonLog "Hoppade över inaktiv vy: $($File.Name) (Enabled = false)"
                 }
                 Remove-Item Function:\Get-ViewConfig -ErrorAction SilentlyContinue
             }
         } catch {
+            Write-KrimsonLog "FEL vid inläsning av vy $($File.Name): $_"
             Write-Warning "Kunde inte ladda: $($File.Name). Fel: $_"
         }
     }
@@ -322,6 +333,21 @@ $KrimsonForm.Text = "KrimsonTool v0.1"
 $KrimsonForm.Size = New-Object System.Drawing.Size(1200, 800)
 $KrimsonForm.StartPosition = "CenterScreen"
 $KrimsonForm.BackColor = $Global:ColorBgMain
+
+$iconJsonPath = Join-Path $PSScriptRoot "Config\icon.json"
+if (Test-Path $iconJsonPath) {
+    try {
+        $iconData = Get-Content -Path $iconJsonPath -Raw | ConvertFrom-Json
+        if (-not [string]::IsNullOrWhiteSpace($iconData.AppIconBase64)) {
+            $iconBytes = [System.Convert]::FromBase64String($iconData.AppIconBase64)
+            $iconMs = New-Object System.IO.MemoryStream(,$iconBytes)
+            $KrimsonForm.Icon = New-Object System.Drawing.Icon($iconMs)
+            $KrimsonForm.ShowIcon = $true
+        }
+    } catch {
+        Write-KrimsonLog "Kunde inte läsa in applikationsikon från Assets\icon.json: $_"
+    }
+}
 
 # --- STEG 1: RUBRIKPANEL (Läggs till först, fyller toppen) ---
 $panelHeader = New-Object System.Windows.Forms.Panel
@@ -431,9 +457,8 @@ $KrimsonForm.Controls.Add($panelSideMenu)
 # Logotyp överst i den nyskapade sidomenyn
 if ($logoImage -ne $null) {
     $pictureBoxLogo = New-Object System.Windows.Forms.PictureBox
-    $pictureBoxLogo.Size = New-Object System.Drawing.Size(175, 80)
-    $pictureBoxLogo.Margin = New-Object System.Windows.Forms.Padding(0, 10, 10, 20)
-    $pictureBoxLogo.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+    $pictureBoxLogo.Margin = New-Object System.Windows.Forms.Padding(15, 15, 0, 20)
+    $pictureBoxLogo.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::AutoSize
     $pictureBoxLogo.Image = $logoImage
     $pictureBoxLogo.Cursor = [System.Windows.Forms.Cursors]::Hand
     
@@ -584,6 +609,7 @@ foreach ($View in $Global:SortedViews) {
 
         # Kör den globala funktionen trådsäkert och modulärt
         if (Get-Command $ClickedView.MainFunc -ErrorAction SilentlyContinue) {
+            Write-KrimsonLog "Öppnade vy: $($ClickedView.MainMenu) - $($ClickedView.SubMenu)"
             & $ClickedView.MainFunc
         }
     })

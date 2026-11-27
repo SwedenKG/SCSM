@@ -211,6 +211,7 @@ function Global:Show-DailyTickets {
             $btnFetch.Enabled = $true
         }
     }.GetNewClosure())
+
 }
 
 
